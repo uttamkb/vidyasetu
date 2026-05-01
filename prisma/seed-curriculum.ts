@@ -11,8 +11,10 @@ if (!DATABASE_URL) {
   throw new Error("DATABASE_URL is not set");
 }
 console.log("DATABASE_URL:", DATABASE_URL.substring(0, 50) + "...");
-const adapter = new PrismaNeon({ connectionString: DATABASE_URL } as any);
-const prisma = new PrismaClient({ adapter } as any);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const adapter = new PrismaNeon({ connectionString: DATABASE_URL } as any);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const prisma = new PrismaClient({ adapter } as any);
 
 /** Compact curriculum seed. Each string is "chapter|topic|subtopic1,subtopic2,..." */
 const MATH = `Number Systems|Introduction|Rational Numbers,Irrational Numbers,Real Numbers

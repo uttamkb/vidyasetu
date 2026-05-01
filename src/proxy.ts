@@ -1,17 +1,17 @@
 import { auth } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
-export default auth((req) => {
+export const proxy = auth((req) => {
   const { nextUrl } = req;
   const isLoggedIn = !!req.auth;
   const isOnboarded = req.auth?.user?.isOnboarded;
-  
-  const isDashboardRoute = nextUrl.pathname.startsWith("/dashboard") || 
+
+  const isDashboardRoute = nextUrl.pathname.startsWith("/dashboard") ||
                           nextUrl.pathname.startsWith("/assignments") ||
                           nextUrl.pathname.startsWith("/progress") ||
                           nextUrl.pathname.startsWith("/study-materials") ||
                           nextUrl.pathname.startsWith("/profile");
-  
+
   const isOnboardingPage = nextUrl.pathname === "/onboarding";
 
   if (isLoggedIn && !isOnboarded && !isOnboardingPage && isDashboardRoute) {

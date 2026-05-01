@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/db';
 import { contentScraper, RawContent } from './content-scraper';
 import { relevanceEngine, ClassificationResult } from './relevance-engine';
-import { contentValidator, ValidationResult } from './content-validator';
+import { contentValidator } from './content-validator';
 
 export interface AgentConfig {
   enabled: boolean;
@@ -144,7 +144,7 @@ class ContentAgent {
     return result;
   }
 
-  private async processSource(source: any): Promise<SourceStats> {
+  private async processSource(source: { id: string; name: string; url: string; type: string; config?: unknown }): Promise<SourceStats> {
     const stats: SourceStats = {
       sourceId: source.id,
       sourceName: source.name,
@@ -159,7 +159,7 @@ class ContentAgent {
     // Fetch content from source
     const rawContents = await contentScraper.fetchFromSource({
       url: source.url,
-      type: source.type,
+      type: source.type as 'RSS' | 'API' | 'WEBSITE' | 'YOUTUBE',
       config: source.config,
     });
 
@@ -199,7 +199,7 @@ class ContentAgent {
 
   private async processContentItem(
     rawContent: RawContent,
-    source: any
+    source: { id: string; name: string; url: string }
   ): Promise<{ approved: boolean; relevanceScore: number }> {
     // 1. Validate content
     const validation = await contentValidator.validateContent(rawContent);
@@ -249,7 +249,7 @@ class ContentAgent {
 
   private async saveContentItem(
     rawContent: RawContent,
-    source: any,
+    source: { id: string },
     classification: ClassificationResult,
     relevanceScore: number,
     shouldAutoApprove: boolean

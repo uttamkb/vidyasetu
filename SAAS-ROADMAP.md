@@ -130,16 +130,16 @@ Each task is designed to be completable in a single focused development session 
 - [x] **Guided Tour**: Highlight key features with tooltips (React Joyride)
 
 ### P1.2: Gamification v1 — Core Loops
-- [ ] Add `Badge`, `Achievement`, `UserBadge` models to Prisma
-- [ ] Create badge system:
+- [x] Add `Badge`, `Achievement`, `UserBadge` models to Prisma
+- [x] Create badge system:
   - **First Steps**: "First Login", "First Assignment", "First Perfect Score"
   - **Consistency**: "3-Day Streak", "7-Day Streak", "30-Day Streak"
   - **Mastery**: "Math Whiz", "Science Star", "All-Rounder"
   - **Speed**: "Quick Thinker" (finish under time), "Night Owl" (study after 9pm)
-- [ ] Build badge notification popup (celebration animation)
-- [ ] Add progress levels: Beginner → Scholar → Topper → Board Ready
-- [ ] Display level progress bar in dashboard header
-- [ ] Create weekly challenges (e.g., "Complete 5 assignments this week")
+- [x] Build badge notification popup (celebration animation) (using `sonner` and `confetti`)
+- [x] Add progress levels: Beginner → Scholar → Topper → Board Ready
+- [x] Display level progress bar in dashboard header
+- [x] Create weekly challenges (e.g., "Complete 5 assignments this week")
 
 ### P1.3: Streak & Habit Tracker
 - [ ] Add `studyStreak` to User model (already in Progress model)
@@ -170,11 +170,11 @@ Each task is designed to be completable in a single focused development session 
 **Goal:** Make every student feel they have a personal tutor.
 
 ### P2.1: AI Diagnostic & Skill Mapping
-- [ ] Build diagnostic test (20 questions across all subjects)
-- [ ] Store diagnostic results in `UserSkillMap` model (topic → proficiency 0-100)
-- [ ] Display skill radar chart in profile
-- [ ] Auto-identify weak topics from submission history
-- [ ] Show "Focus Areas" card on dashboard
+- [x] Build diagnostic test (20 questions across all subjects) — `/api/diagnostic` with interleaved subject plan
+- [x] Store diagnostic results in `UserMastery` model (topic → proficiency 0-100) — `/api/diagnostic/submit`
+- [x] Display skill radar chart in profile — `SkillRadarChart` component with Recharts
+- [x] Auto-identify weak topics from submission history — `/api/mastery` aggregates by subject
+- [x] Show "Focus Areas" card on dashboard — `FocusAreas` + `FocusAreasClient` components
 
 ### P2.2: AI-Generated Personalized Assignments
 - [ ] Integrate OpenAI/Anthropic API

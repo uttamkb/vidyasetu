@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +39,8 @@ interface NavbarUser {
   name?: string | null;
   email?: string | null;
   image?: string | null;
+  xp?: number;
+  level?: string;
 }
 
 export function Navbar({ user }: { user: NavbarUser }) {
@@ -49,12 +52,14 @@ export function Navbar({ user }: { user: NavbarUser }) {
       <div className="container flex h-14 items-center">
         <div className="mr-4 flex items-center gap-2">
           <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger>
-              <Button variant="ghost" size="icon" className="mr-2 lg:hidden">
-                <Menu className="h-5 w-5" />
-                <span className="sr-only">Toggle menu</span>
-              </Button>
-            </SheetTrigger>
+            <SheetTrigger
+              render={
+                <Button variant="ghost" size="icon" className="mr-2 lg:hidden">
+                  <Menu className="h-5 w-5" />
+                  <span className="sr-only">Toggle menu</span>
+                </Button>
+              }
+            />
             <SheetContent side="left" className="w-64">
               <div className="flex items-center gap-2 mb-6">
                 <GraduationCap className="h-6 w-6 text-primary" />
@@ -109,16 +114,39 @@ export function Navbar({ user }: { user: NavbarUser }) {
           })}
         </nav>
 
-        <div className="flex items-center gap-2 ml-auto">
+        <div className="flex items-center gap-4 ml-auto">
+          {user && (
+            <div className="hidden md:flex flex-col items-end gap-1 min-w-[120px]">
+              <div className="flex items-center gap-2 text-xs font-medium">
+                <span className="text-muted-foreground">Level:</span>
+                <Badge variant="outline" className="bg-primary/5 text-primary border-primary/20">
+                  {user.level || "Beginner"}
+                </Badge>
+              </div>
+              <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-primary transition-all duration-500" 
+                  style={{ width: `${Math.min(100, ((user.xp || 0) % 500) / 5)}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-muted-foreground">
+                {user.xp || 0} XP
+              </span>
+            </div>
+          )}
+
           <DropdownMenu>
-            <DropdownMenuTrigger>
-              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
-                <Avatar className="h-8 w-8">
-                  <AvatarImage src={user?.image || ""} alt={user?.name || ""} />
-                  <AvatarFallback>{user?.name?.charAt(0) || "S"}</AvatarFallback>
-                </Avatar>
-              </Button>
-            </DropdownMenuTrigger>
+            <DropdownMenuTrigger
+              nativeButton={false}
+              render={
+                <div className="relative h-8 w-8 rounded-full cursor-pointer">
+                  <Avatar className="h-8 w-8">
+                    <AvatarImage src={user?.image || ""} alt={user?.name || ""} />
+                    <AvatarFallback>{user?.name?.charAt(0) || "S"}</AvatarFallback>
+                  </Avatar>
+                </div>
+              }
+            />
             <DropdownMenuContent className="w-56" align="end">
               <div className="flex items-center gap-2 p-2">
                 <Avatar className="h-8 w-8">

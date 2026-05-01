@@ -73,7 +73,7 @@ export function EditProfileModal({ user }: { user: UserProfileData }) {
         <DialogHeader>
           <DialogTitle>Edit Profile</DialogTitle>
           <DialogDescription>
-            Make changes to your student profile here. Click save when you're done.
+            Make changes to your student profile here. Click save when you{"'"}re done.
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 py-4">

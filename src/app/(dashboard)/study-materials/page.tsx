@@ -4,10 +4,8 @@ import { redirect } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { BookOpen, Video, FileText, Dumbbell, Bookmark, ExternalLink, Search } from "lucide-react";
-import Link from "next/link";
+import { BookOpen, Video, FileText, Dumbbell, Bookmark, ExternalLink } from "lucide-react";
 
 async function getStudyMaterials() {
   const materials = await prisma.studyMaterial.findMany({
@@ -44,9 +42,9 @@ export default async function StudyMaterialsPage() {
     getSubjects(),
   ]);
 
-  const materialsBySubject = subjects.map((subject: any) => ({
+  const materialsBySubject = subjects.map((subject) => ({
     ...subject,
-    materials: materials.filter((m: any) => m.subjectId === subject.id),
+    materials: materials.filter((m) => m.subjectId === subject.id),
   }));
 
   return (
@@ -61,7 +59,7 @@ export default async function StudyMaterialsPage() {
       <Tabs defaultValue="all" className="w-full">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="all">All</TabsTrigger>
-          {subjects.map((subject: any) => (
+          {subjects.map((subject) => (
             <TabsTrigger key={subject.id} value={subject.id}>
               {subject.name}
             </TabsTrigger>
@@ -70,13 +68,13 @@ export default async function StudyMaterialsPage() {
 
         <TabsContent value="all" className="mt-6">
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {materials.map((material: any) => (
+            {materials.map((material) => (
               <MaterialCard key={material.id} material={material} />
             ))}
           </div>
         </TabsContent>
 
-        {materialsBySubject.map((subject: any) => (
+        {materialsBySubject.map((subject) => (
           <TabsContent key={subject.id} value={subject.id} className="mt-6">
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {subject.materials.length === 0 ? (
@@ -84,7 +82,7 @@ export default async function StudyMaterialsPage() {
                   No materials available for this subject yet.
                 </p>
               ) : (
-                subject.materials.map((material: any) => (
+                subject.materials.map((material) => (
                   <MaterialCard key={material.id} material={material} />
                 ))
               )}
@@ -96,7 +94,17 @@ export default async function StudyMaterialsPage() {
   );
 }
 
-function MaterialCard({ material }: { material: any }) {
+interface Material {
+  id: string;
+  title: string;
+  description: string | null;
+  type: string;
+  bookmarked: boolean;
+  subject: { color: string; name: string };
+  topic: string;
+  url: string | null;
+}
+function MaterialCard({ material }: { material: Material }) {
   return (
     <Card className="flex flex-col">
       <CardHeader className="pb-3">

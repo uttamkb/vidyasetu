@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -39,7 +39,6 @@ import {
   AlertCircle,
   Eye,
   ExternalLink,
-  Trash2,
   Plus,
   Activity,
 } from "lucide-react";
@@ -159,15 +158,21 @@ export default function ContentManagementPage() {
   };
 
   useEffect(() => {
-    fetchAgentStatus();
-    fetchContentQueue();
-    fetchSources();
+    // Schedule data fetches in microtask to avoid synchronous setState in effect
+    const timeout = setTimeout(() => {
+      void fetchAgentStatus();
+      void fetchContentQueue();
+      void fetchSources();
+    }, 0);
     const interval = setInterval(() => {
-      fetchAgentStatus();
-      fetchContentQueue();
+      void fetchAgentStatus();
+      void fetchContentQueue();
     }, 5000); // Poll every 5 seconds
     
-    return () => clearInterval(interval);
+    return () => {
+      clearTimeout(timeout);
+      clearInterval(interval);
+    };
   }, [fetchAgentStatus, fetchContentQueue, fetchSources]);
 
   const handleAgentAction = async (action: "start" | "stop" | "trigger") => {
@@ -653,7 +658,7 @@ export default function ContentManagementPage() {
           <DialogHeader>
             <DialogTitle>Add Content Source</DialogTitle>
             <DialogDescription>
-              Add a new source for the content agent to monitor. Ensure it's a trusted educational website.
+              Add a new source for the content agent to monitor. Ensure it{"'"}s a trusted educational website.
             </DialogDescription>
           </DialogHeader>
           <div className="py-4 space-y-4">

@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { GuidedTour } from "@/components/guided-tour";
+import { FocusAreasClient } from "@/components/focus-areas-client";
 import {
   ClipboardList,
   CheckCircle2,
@@ -12,8 +13,29 @@ import {
   Flame,
   Clock,
   ArrowRight,
+  Trophy,
 } from "lucide-react";
 import Link from "next/link";
+
+interface DashboardSubject {
+  id: string;
+  name: string;
+  color: string;
+  completed: number;
+  total: number;
+  progress: number;
+  isHardest: boolean;
+}
+
+interface DashboardChallenge {
+  id: string;
+  title: string;
+  description: string;
+  progress: number;
+  target: number;
+  points: number;
+  isCompleted: boolean;
+}
 
 async function getDashboardData(userId: string) {
   const now = new Date();
@@ -21,7 +43,7 @@ async function getDashboardData(userId: string) {
   startOfWeek.setDate(now.getDate() - now.getDay());
   startOfWeek.setHours(0, 0, 0, 0);
 
-  const [user, totalAssignments, submissions, userSubmissions, subjects] = await Promise.all([
+  const [user, totalAssignments, submissionsCount, userSubmissions, subjects, userChallenges] = await Promise.all([
     prisma.user.findUnique({
       where: { id: userId },
       select: { hardestSubjects: true, targetScore: true, board: true },
@@ -37,6 +59,16 @@ async function getDashboardData(userId: string) {
       take: 5,
     }),
     prisma.subject.findMany(),
+    prisma.userChallenge.findMany({
+      where: {
+        userId,
+        challenge: {
+          isActive: true,
+          endDate: { gte: now },
+        },
+      },
+      include: { challenge: true },
+    }),
   ]);
 
   const pendingAssignments = totalAssignments - (await prisma.submission.count({
@@ -74,21 +106,23 @@ async function getDashboardData(userId: string) {
     return streak;
   })();
 
+  const hardestSubjectsSet = new Set(user?.hardestSubjects || []);
+
   return {
     totalAssignments,
     pendingAssignments: Math.max(0, pendingAssignments),
-    submissionsThisWeek: submissions,
+    submissionsThisWeek: submissionsCount,
     averageScore,
     studyStreak,
     recentSubmissions: userSubmissions,
     targetScore: user?.targetScore ?? 85,
     subjects: subjects
       .sort((a, b) => {
-        const aHard = user?.hardestSubjects.includes(a.name) ? 1 : 0;
-        const bHard = user?.hardestSubjects.includes(b.name) ? 1 : 0;
+        const aHard = hardestSubjectsSet.has(a.name) ? 1 : 0;
+        const bHard = hardestSubjectsSet.has(b.name) ? 1 : 0;
         return bHard - aHard; // Hardest first
       })
-      .map((s) => {
+      .map((s): DashboardSubject => {
         return {
           id: s.id,
           name: s.name,
@@ -96,9 +130,18 @@ async function getDashboardData(userId: string) {
           completed: 0,
           total: 0,
           progress: 0,
-          isHardest: user?.hardestSubjects.includes(s.name),
+          isHardest: hardestSubjectsSet.has(s.name),
         };
       }),
+    challenges: userChallenges.map((uc): DashboardChallenge => ({
+      id: uc.id,
+      title: uc.challenge.title,
+      description: uc.challenge.description,
+      progress: uc.progress,
+      target: uc.challenge.target,
+      points: uc.challenge.points,
+      isCompleted: uc.isCompleted,
+    })),
   };
 }
 
@@ -165,8 +208,8 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Quick Stats */}
-      <div id="tour-quick-stats" className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      {/* Quick Stats + Focus Areas */}
+      <div id="tour-quick-stats" className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Average Score</CardTitle>
@@ -213,6 +256,53 @@ export default async function DashboardPage() {
             <p className="text-xs text-muted-foreground mt-1">Keep it up!</p>
           </CardContent>
         </Card>
+      </div>
+
+      {/* Focus Areas */}
+      <FocusAreasClient />
+
+      {/* Weekly Challenges */}
+      <div>
+        <div className="flex items-center gap-2 mb-4">
+          <Trophy className="h-5 w-5 text-primary" />
+          <h2 className="text-xl font-semibold">Weekly Challenges</h2>
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {data.challenges.length === 0 ? (
+            <Card className="col-span-full">
+              <CardContent className="py-6 text-center text-muted-foreground">
+                No active challenges this week. Check back later!
+              </CardContent>
+            </Card>
+          ) : (
+            data.challenges.map((challenge) => (
+              <Card key={challenge.id} className={challenge.isCompleted ? "bg-primary/5 border-primary/20" : ""}>
+                <CardContent className="pt-6">
+                  <div className="flex items-start justify-between mb-2">
+                    <div>
+                      <p className="font-bold">{challenge.title}</p>
+                      <p className="text-xs text-muted-foreground">{challenge.description}</p>
+                    </div>
+                    {challenge.isCompleted ? (
+                      <Badge className="bg-green-500 hover:bg-green-600">
+                        <CheckCircle2 className="h-3 w-3 mr-1" /> Done
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline">+{challenge.points} XP</Badge>
+                    )}
+                  </div>
+                  <div className="mt-4 space-y-1.5">
+                    <div className="flex justify-between text-xs">
+                      <span>Progress</span>
+                      <span>{challenge.progress}/{challenge.target}</span>
+                    </div>
+                    <Progress value={(challenge.progress / challenge.target) * 100} className="h-1.5" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
+        </div>
       </div>
 
       {/* Subject Progress */}

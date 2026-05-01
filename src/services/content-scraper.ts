@@ -238,7 +238,7 @@ class ContentScraper {
 
   extractMetadata(html: string): Record<string, string | undefined> {
     const $ = cheerio.load(html);
-    const metadata: Record<string, any> = {};
+    const metadata: Record<string, string | undefined> = {};
 
     // Extract Open Graph metadata
     metadata.ogTitle = $('meta[property="og:title"]').attr('content');

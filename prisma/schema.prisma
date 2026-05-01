@@ -509,7 +509,7 @@ model StudyMaterial {
 
 model WeeklyChallenge {
   id          String    @id @default(uuid())
-  title       String
+  title       String    @unique
   description String
   target      Int       // e.g., 5 assignments
   type        String    // ASSIGNMENTS_COMPLETED, PERFECT_SCORES, MINUTES_STUDIED

@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/db";
-import { User, Submission, PracticeSession } from "@prisma/client";
 
 // Defines the shape of the parsed condition JSON string on the Badge model
 export type BadgeCondition = 
@@ -16,6 +15,7 @@ export type BadgeCondition =
 export interface GamificationEvent {
   userId: string;
   type: "LOGIN" | "SUBMISSION" | "SESSION_COMPLETED";
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data?: any; // E.g., submission details, session duration
 }
 

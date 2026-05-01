@@ -19,7 +19,7 @@ async function getAssignments(userId: string) {
     orderBy: [{ weekNumber: "desc" }, { createdAt: "desc" }],
   });
 
-  return assignments.map((a: any) => {
+  return assignments.map((a) => {
     const submission = a.submissions[0];
     let status = "NOT_STARTED";
     if (submission) {
@@ -53,12 +53,6 @@ export default async function AssignmentsPage() {
     SUBMITTED: "bg-green-500",
   };
 
-  const statusLabels: Record<string, string> = {
-    NOT_STARTED: "Not Started",
-    IN_PROGRESS: "In Progress",
-    SUBMITTED: "Submitted",
-  };
-
   return (
     <div className="space-y-6">
       <div>
@@ -69,7 +63,7 @@ export default async function AssignmentsPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {assignments.map((assignment: any) => (
+        {assignments.map((assignment) => (
           <Card key={assignment.id} className="flex flex-col">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">

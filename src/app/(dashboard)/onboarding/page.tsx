@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import { 
   Select, 
@@ -36,7 +35,7 @@ export default function OnboardingPage() {
   useEffect(() => {
     async function fetchSubjects() {
       try {
-        const res = await fetch("/api/seed"); // Using seed route to get subjects for now or dedicated one
+        await fetch("/api/seed"); // Using seed route to get subjects for now or dedicated one
         // Wait, /api/seed is POST. Let's assume dashboard data or dedicated fetch.
         // For now, let's just hardcode the 5 main subjects to avoid blockers if API isn't ready.
         setSubjects([
@@ -47,8 +46,8 @@ export default function OnboardingPage() {
           { id: "hindi", name: "Hindi" },
         ]);
         setLoading(false);
-      } catch (err) {
-        console.error("Failed to fetch subjects:", err);
+      } catch {
+        console.error("Failed to fetch subjects");
         setLoading(false);
       }
     }
@@ -85,7 +84,7 @@ export default function OnboardingPage() {
         const data = await res.json();
         setError(data.error || "Something went wrong. Please try again.");
       }
-    } catch (err) {
+    } catch {
       setError("Failed to save your preferences. Check your connection.");
     } finally {
       setSaving(false);
@@ -106,7 +105,7 @@ export default function OnboardingPage() {
         <GraduationCap className="h-12 w-12 text-primary mx-auto mb-4" />
         <h1 className="text-3xl font-bold tracking-tight">Welcome to VidyaSetu</h1>
         <p className="text-muted-foreground mt-2">
-          Let's personalize your learning journey in just 3 quick steps.
+          Let{"'"}s personalize your learning journey in just 3 quick steps.
         </p>
       </div>
 
@@ -135,19 +134,19 @@ export default function OnboardingPage() {
           {step === 1 && (
             <>
               <CardTitle>Which subjects do you find hardest?</CardTitle>
-              <CardDescription>We'll prioritize these in your daily practice.</CardDescription>
+              <CardDescription>We{"'"}ll prioritize these in your daily practice.</CardDescription>
             </>
           )}
           {step === 2 && (
             <>
-              <CardTitle>What's your target score?</CardTitle>
-              <CardDescription>Aim high! We'll help you get there step by step.</CardDescription>
+              <CardTitle>What{"'"}s your target score?</CardTitle>
+              <CardDescription>Aim high! We{"'"}ll help you get there step by step.</CardDescription>
             </>
           )}
           {step === 3 && (
             <>
               <CardTitle>When do you usually study?</CardTitle>
-              <CardDescription>We'll send you helpful reminders at the right time.</CardDescription>
+              <CardDescription>We{"'"}ll send you helpful reminders at the right time.</CardDescription>
             </>
           )}
         </CardHeader>

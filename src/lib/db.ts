@@ -6,11 +6,20 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL is not set");
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    // Lazy fail: only throw when actually trying to use the DB
+    // This prevents build-time / middleware evaluation crashes
+    console.warn("[db.ts] DATABASE_URL is not set — Prisma client will not work.");
+    // Return a Proxy that throws on usage
+    return new Proxy({} as PrismaClient, {
+      get() {
+        throw new Error("DATABASE_URL is not set. Please configure your environment.");
+      },
+    });
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL } as any);
+  const adapter = new PrismaNeon({ connectionString: databaseUrl } as any);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return new PrismaClient({ adapter } as any);
 }

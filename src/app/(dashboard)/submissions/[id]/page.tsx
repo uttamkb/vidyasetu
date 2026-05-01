@@ -33,8 +33,19 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
     notFound();
   }
 
-  const questions = submission.assignment.questions as any[];
-  const answers = submission.answers as any[];
+  interface Question {
+    question: string;
+    type: string;
+    marks: number;
+    correctAnswer: string;
+    keywords?: string[];
+  }
+  interface Answer {
+    questionIndex: number;
+    answer: string;
+  }
+  const questions = submission.assignment.questions as unknown as Question[];
+  const answers = submission.answers as unknown as Answer[];
   const percentage = Math.round((submission.score / submission.maxMarks) * 100);
 
   const getScoreColor = (pct: number) => {
@@ -102,8 +113,8 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
       <div>
         <h2 className="text-xl font-semibold mb-4">Question-wise Breakdown</h2>
         <div className="space-y-4">
-          {questions.map((question: any, index: number) => {
-            const answer = answers.find((a: any) => a.questionIndex === index);
+          {questions.map((question, index) => {
+            const answer = answers.find((a) => a.questionIndex === index);
             let score = 0;
             if (answer) {
               if (question.type === "MCQ") {
@@ -175,7 +186,7 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
                     <div>
                       <p className="text-sm font-medium text-muted-foreground">Expected Keywords:</p>
                       <div className="flex flex-wrap gap-2 mt-1">
-                        {question.keywords.map((keyword: string, i: number) => (
+                        {question.keywords.map((keyword, i) => (
                           <Badge key={i} variant="outline" className="text-xs">
                             {keyword}
                           </Badge>

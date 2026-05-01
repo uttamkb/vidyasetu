@@ -1,4 +1,5 @@
-import { prisma } from "@/lib/db";
+import { prisma } from "../lib/db";
+import "dotenv/config";
 
 const badges = [
   {

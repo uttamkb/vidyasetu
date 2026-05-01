@@ -6,7 +6,7 @@ import * as ReactJoyride from "react-joyride";
 import { useSearchParams, useRouter } from "next/navigation";
 
 // Extract the component securely regardless of CJS/ESM interop issues
-const JoyrideComponent: any = (ReactJoyride as any).default || (ReactJoyride as any).Joyride || ReactJoyride;
+const JoyrideComponent = ReactJoyride.default || ReactJoyride;
 
 export function GuidedTour() {
   const [run, setRun] = useState(false);
@@ -15,8 +15,11 @@ export function GuidedTour() {
 
   useEffect(() => {
     // Only run the tour if the URL has ?onboarded=true
-    if (searchParams.get("onboarded") === "true") {
-      setRun(true);
+    const onboarded = searchParams.get("onboarded") === "true";
+    if (onboarded) {
+      // Use requestAnimationFrame to avoid synchronous setState in effect
+      const frame = requestAnimationFrame(() => setRun(true));
+      return () => cancelAnimationFrame(frame);
     }
   }, [searchParams]);
 
@@ -48,6 +51,7 @@ export function GuidedTour() {
     }
   ];
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const handleJoyrideCallback = (data: any) => {
     const { status } = data;
     const finishedStatuses: string[] = [STATUS.FINISHED, STATUS.SKIPPED];

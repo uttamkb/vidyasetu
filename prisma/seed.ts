@@ -170,7 +170,7 @@ async function main() {
         description: `Practice assignment for ${subject.name} covering Week 1 topics.`,
         weekNumber: 1,
         subjectId: subject.id,
-        questions: questions as any,
+        questions: questions as unknown as import("@prisma/client").Prisma.InputJsonValue,
         maxMarks: 25,
         dueDate: sunday,
         timeLimit: 60,

@@ -84,12 +84,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.id = user.id;
       }
 
-      // Fetch user from DB to get isOnboarded status
+      // Fetch user from DB to get isOnboarded and gamification status
       const dbUser = await prisma.user.findUnique({
         where: { id: token.id as string },
-        select: { isOnboarded: true },
+        select: { isOnboarded: true, xp: true, level: true },
       });
       token.isOnboarded = dbUser?.isOnboarded ?? false;
+      token.xp = dbUser?.xp ?? 0;
+      token.level = dbUser?.level ?? "Beginner";
 
       return token;
     },
@@ -97,6 +99,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token?.id && session.user) {
         session.user.id = token.id as string;
         session.user.isOnboarded = token.isOnboarded as boolean;
+        session.user.xp = token.xp as number;
+        session.user.level = token.level as string;
       }
       return session;
     },

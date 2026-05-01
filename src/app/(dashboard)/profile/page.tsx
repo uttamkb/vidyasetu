@@ -6,17 +6,17 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { EditProfileModal } from "./edit-profile-modal";
-import { UserProfileData } from "@/types/profile";
+import { SkillRadarChart } from "@/components/skill-radar-chart";
 import {
   User,
   Mail,
   GraduationCap,
-  School,
   Calendar,
   Award,
   BookOpen,
   Flame,
   Globe,
+  Target,
 } from "lucide-react";
 
 async function getProfileData(userId: string) {
@@ -32,8 +32,8 @@ async function getProfileData(userId: string) {
   if (!user) return null;
 
   const totalSubmissions = user.submissions.length;
-  const completedSubmissions = user.submissions.filter((s: any) => s.status === "SUBMITTED").length;
-  const scores = user.submissions.map((s: any) => (s.score / s.maxMarks) * 100);
+  const completedSubmissions = user.submissions.filter((s) => s.status === "SUBMITTED").length;
+  const scores = user.submissions.map((s) => (s.score / s.maxMarks) * 100);
   const averageScore = scores.length > 0
     ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length)
     : 0;
@@ -57,12 +57,54 @@ async function getProfileData(userId: string) {
   };
 }
 
+async function getMasteryData(userId: string) {
+  const masteryData = await prisma.userMastery.findMany({
+    where: { userId },
+    include: {
+      subtopic: {
+        include: {
+          topic: {
+            include: {
+              chapter: {
+                include: {
+                  subject: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const subjectMap = new Map<string, { name: string; total: number; count: number }>();
+
+  for (const m of masteryData) {
+    const subject = m.subtopic.topic.chapter.subject;
+    const existing = subjectMap.get(subject.id);
+    if (existing) {
+      existing.total += m.masteryScore;
+      existing.count += 1;
+    } else {
+      subjectMap.set(subject.id, { name: subject.name, total: m.masteryScore, count: 1 });
+    }
+  }
+
+  return Array.from(subjectMap.entries()).map(([id, data]) => ({
+    subjectId: id,
+    subjectName: data.name,
+    averageMastery: Math.round(data.total / data.count),
+  }));
+}
+
 export default async function ProfilePage() {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
   const data = await getProfileData(session.user.id);
   if (!data) redirect("/login");
+
+  const masteryData = await getMasteryData(session.user.id);
 
   const { user, stats, badges } = data;
 
@@ -141,6 +183,20 @@ export default async function ProfilePage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Skill Radar Chart */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Target className="h-5 w-5 text-primary" />
+            Skill Map
+          </CardTitle>
+          <CardDescription>Subject-wise mastery based on your diagnostic test</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SkillRadarChart data={masteryData} />
+        </CardContent>
+      </Card>
 
       {/* Badges */}
       <Card>

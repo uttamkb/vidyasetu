@@ -4,7 +4,6 @@ import { redirect, notFound } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Separator } from "@/components/ui/separator";
 import { Clock, BookOpen, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import AssignmentForm from "./assignment-form";
@@ -39,7 +38,15 @@ export default async function AssignmentDetailPage({ params }: { params: Promise
     notFound();
   }
 
-  const questions = assignment.questions as any[];
+  interface Question {
+    question: string;
+    options?: string[];
+    correctAnswer: string;
+    type: string;
+    marks: number;
+    keywords?: string[];
+  }
+  const questions = assignment.questions as unknown as Question[];
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">

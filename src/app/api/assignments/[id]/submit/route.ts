@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { NextResponse } from "next/server";
+import { gamificationService } from "@/services/gamification";
 
 function evaluateMCQ(userAnswer: string, correctAnswer: string, marks: number): number {
   return userAnswer.trim().toLowerCase() === correctAnswer.trim().toLowerCase() ? marks : 0;
@@ -47,7 +48,13 @@ export async function POST(
       return NextResponse.json({ error: "Assignment not found" }, { status: 404 });
     }
 
-    const questions = assignment.questions as any[];
+    interface Question {
+      type: string;
+      correctAnswer: string;
+      marks: number;
+      keywords?: string[];
+    }
+    const questions = assignment.questions as unknown as Question[];
     let totalScore = 0;
     const feedbackItems: string[] = [];
 
@@ -59,9 +66,9 @@ export async function POST(
       if (question.type === "MCQ") {
         score = evaluateMCQ(answer.answer, question.correctAnswer, question.marks);
       } else if (question.type === "SHORT_ANSWER") {
-        score = evaluateShortAnswer(answer.answer, question.keywords, question.marks);
+        score = evaluateShortAnswer(answer.answer, question.keywords ?? [], question.marks);
       } else if (question.type === "LONG_ANSWER") {
-        score = evaluateLongAnswer(answer.answer, question.keywords, question.marks);
+        score = evaluateLongAnswer(answer.answer, question.keywords ?? [], question.marks);
       }
 
       totalScore += score;
@@ -87,7 +94,7 @@ export async function POST(
       submission = await prisma.submission.update({
         where: { id: existing.id },
         data: {
-          answers: answers as any,
+          answers: answers as unknown as import("@prisma/client").Prisma.InputJsonValue,
           score: totalScore,
           status: "SUBMITTED",
           feedback,
@@ -98,7 +105,7 @@ export async function POST(
         data: {
           userId,
           assignmentId: id,
-          answers: answers as any,
+          answers: answers as unknown as import("@prisma/client").Prisma.InputJsonValue,
           score: totalScore,
           maxMarks: assignment.maxMarks,
           status: "SUBMITTED",
@@ -107,11 +114,24 @@ export async function POST(
       });
     }
 
+    // Process gamification events (badges, XP, levels)
+    const newBadges = await gamificationService.processEvent({
+      userId,
+      type: "SUBMISSION",
+      data: {
+        score: totalScore,
+        maxMarks: assignment.maxMarks,
+        // Calculate time taken if available
+        timeTaken: submission.timeTaken, 
+      }
+    });
+
     return NextResponse.json({
       success: true,
       submissionId: submission.id,
       score: totalScore,
       maxMarks: assignment.maxMarks,
+      newBadges,
     });
   } catch (error) {
     console.error("Submit error:", error);
