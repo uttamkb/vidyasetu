@@ -1,0 +1,564 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================================
+// Auth.js v5 Required Models
+// ============================================================
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+// ============================================================
+// User
+// ============================================================
+
+model User {
+  id                String            @id @default(uuid())
+  email             String            @unique
+  name              String?
+  image             String?
+  grade             String            @default("9")
+  board             String            @default("CBSE")
+  
+  // Onboarding
+  isOnboarded       Boolean           @default(false)
+  hardestSubjects   String[]
+  targetScore       Int?
+  studyTimePreference String?
+
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  // Auth.js
+  accounts          Account[]
+  sessions          Session[]
+
+  // Gamification & Progress
+  xp                Int               @default(0)
+  level             String            @default("Beginner") // Beginner, Scholar, Topper, Board Ready
+  
+  // Learning state
+  userMastery       UserMastery[]
+  practiceSessions  PracticeSession[]
+  studyStreak       StudyStreak?
+  notifications     Notification[]
+  userChallenges    UserChallenge[]
+
+  // Legacy (read-only)
+  submissions       Submission[]
+  userBadges        UserBadge[]
+
+  @@map("users")
+}
+
+// ============================================================
+// Curriculum Graph
+// ============================================================
+
+model Subject {
+  id        String    @id @default(uuid())
+  name      String
+  grade     String
+  board     String    @default("CBSE")
+  color     String    @default("bg-blue-500")
+  icon      String?
+  orderIndex Int      @default(0)
+  chapters  Chapter[]
+  assignments Assignment[]
+  studyMaterials StudyMaterial[]
+  contentSources ContentSource[]
+  contentItems   ContentItem[]
+
+  @@unique([name, grade, board])
+  @@map("subjects")
+}
+
+model Chapter {
+  id         String   @id @default(uuid())
+  subjectId  String
+  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+  name       String
+  orderIndex Int      @default(0)
+  topics     Topic[]
+
+  @@unique([subjectId, name])
+  @@map("chapters")
+}
+
+model Topic {
+  id            String     @id @default(uuid())
+  chapterId     String
+  chapter       Chapter    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  name          String
+  orderIndex    Int        @default(0)
+  subtopics     Subtopic[]
+
+  // Self-relation for prerequisites at topic level
+  prerequisites Topic[]    @relation("TopicPrerequisites")
+  requiredFor   Topic[]    @relation("TopicPrerequisites")
+
+  @@unique([chapterId, name])
+  @@map("topics")
+}
+
+model Subtopic {
+  id          String     @id @default(uuid())
+  topicId     String
+  topic       Topic      @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  name        String
+  description String?
+  difficulty  Int        @default(1) // 1-5
+  orderIndex  Int        @default(0)
+
+  questions   Question[]
+  userMastery UserMastery[]
+
+  @@unique([topicId, name])
+  @@map("subtopics")
+}
+
+// ============================================================
+// Questions
+// ============================================================
+
+enum QuestionType {
+  MCQ
+  SHORT_ANSWER
+  NUMERIC
+  MATCHING
+}
+
+enum BloomLevel {
+  REMEMBER
+  UNDERSTAND
+  APPLY
+  ANALYZE
+}
+
+model Question {
+  id                   String       @id @default(uuid())
+  subtopicId           String
+  subtopic             Subtopic     @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+
+  type                 QuestionType
+  bloomLevel           BloomLevel   @default(UNDERSTAND)
+  difficulty           Int          @default(1) // 1-5, calibrated
+
+  // JSON shape: { question: string, options?: string[], correctAnswer: string | number, explanation: string }
+  content              Json
+
+  // JSON shape: [{ pattern: string, explanation: string }]
+  commonMisconceptions Json?
+
+  prerequisiteIds      String[]     // subtopic IDs
+
+  usageCount           Int          @default(0)
+  avgAccuracy          Float        @default(0)
+
+  source               String       @default("curated") // "curated" | "ai_generated"
+  verifiedByHuman      Boolean      @default(false)
+
+  sessionQuestions     SessionQuestion[]
+
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
+
+  @@index([subtopicId, difficulty])
+  @@index([subtopicId, bloomLevel])
+  @@map("questions")
+}
+
+// ============================================================
+// User Mastery (The Brain)
+// ============================================================
+
+model UserMastery {
+  id                 String    @id @default(uuid())
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subtopicId         String
+  subtopic           Subtopic  @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+
+  masteryScore       Float     @default(0)   // 0-100, IRT estimate
+  stability          Float     @default(0)   // days (forgetting curve)
+  retrievability     Float     @default(0)   // current probability of recall
+  lastPracticed      DateTime?
+
+  totalAttempts      Int       @default(0)
+  correctAttempts    Int       @default(0)
+  consecutiveCorrect Int       @default(0)
+
+  // JSON shape: [{ type: string, count: number }]
+  errorPatterns      Json?
+
+  // Personalized difficulty calibration (1-5)
+  difficultyCalibration Int    @default(1)
+
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([userId, subtopicId])
+  @@index([userId, masteryScore])
+  @@index([userId, lastPracticed])
+  @@index([userId, retrievability])
+  @@map("user_mastery")
+}
+
+// ============================================================
+// Practice Sessions
+// ============================================================
+
+enum SessionType {
+  DAILY_REVIEW
+  ADAPTIVE
+  TOPIC_FOCUS
+  EXAM_SPRINT
+  DIAGNOSTIC
+}
+
+enum SessionStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+model PracticeSession {
+  id             String            @id @default(uuid())
+  userId         String
+  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type           SessionType
+  status         SessionStatus     @default(IN_PROGRESS)
+
+  startTime      DateTime          @default(now())
+  endTime        DateTime?
+  targetDuration Int               // minutes
+
+  interleaved    Boolean           @default(false)
+  topicId        String?           // for TOPIC_FOCUS sessions
+
+  sessionQuestions SessionQuestion[]
+
+  createdAt      DateTime          @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, status])
+  @@map("practice_sessions")
+}
+
+model SessionQuestion {
+  id          String           @id @default(uuid())
+  sessionId   String
+  session     PracticeSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  questionId  String
+  question    Question         @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  orderIndex  Int
+
+  // JSON: depends on QuestionType (string for MCQ, number for NUMERIC, etc.)
+  userAnswer  Json?
+  isCorrect   Boolean?
+  timeTaken   Int?             // seconds
+  confidence  Int?             // 1-5
+  hintsUsed   Int              @default(0)
+  tutorUsed   Boolean          @default(false)
+
+  submittedAt DateTime?
+
+  @@unique([sessionId, orderIndex])
+  @@index([sessionId, orderIndex])
+  @@map("session_questions")
+}
+
+// ============================================================
+// Study Streak (Learning-Validated)
+// ============================================================
+
+model StudyStreak {
+  id             String    @id @default(uuid())
+  userId         String    @unique
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  currentStreak  Int       @default(0)
+  longestStreak  Int       @default(0)
+  lastStudyDate  DateTime?
+  totalStudyDays Int       @default(0)
+
+  updatedAt      DateTime  @updatedAt
+
+  @@map("study_streaks")
+}
+
+// ============================================================
+// Notifications
+// ============================================================
+
+enum NotificationType {
+  BADGE
+  ASSIGNMENT
+  STREAK
+  SCORE
+  SYSTEM
+  MASTERY
+  REMEDIATION
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title     String
+  message   String
+  type      NotificationType @default(SYSTEM)
+  read      Boolean          @default(false)
+  link      String?
+
+  createdAt DateTime         @default(now())
+
+  @@index([userId, read])
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+// ============================================================
+// Content Aggregation (Deprioritized)
+// ============================================================
+
+model ContentSource {
+  id          String   @id @default(uuid())
+  name        String
+  url         String   @unique
+  type        String   // RSS, API, WEBSITE, YOUTUBE
+  subjectId   String?
+  subject     Subject? @relation(fields: [subjectId], references: [id])
+  config      Json?
+  isActive    Boolean  @default(true)
+  lastFetched DateTime?
+  items       ContentItem[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("content_sources")
+}
+
+model ContentItem {
+  id              String        @id @default(uuid())
+  sourceId        String
+  source          ContentSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  subjectId       String?
+  subject         Subject?      @relation(fields: [subjectId], references: [id])
+  title           String
+  description     String?
+  url             String        @unique
+  content         String?       @db.Text
+  type            String?       // VIDEO, ARTICLE, etc.
+  relevanceScore  Float         @default(0)
+  isApproved      Boolean       @default(false)
+  isAutoApproved  Boolean       @default(false)
+  rejectionReason String?
+  publishedAt     DateTime?
+  fetchedAt       DateTime      @default(now())
+  metadata        Json?
+  queue           ContentQueue?
+  curationLogs    ContentCurationLog[]
+  createdAt       DateTime      @default(now())
+
+  @@map("content_items")
+}
+
+model ContentQueue {
+  id            String      @id @default(uuid())
+  contentItemId String      @unique
+  contentItem   ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  status        String      @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  priority      Int         @default(0)
+  error         String?
+  processedAt   DateTime?
+  createdAt     DateTime    @default(now())
+
+  @@map("content_queue")
+}
+
+model ContentCurationLog {
+  id            String       @id @default(uuid())
+  action        String
+  contentItemId String?
+  contentItem   ContentItem? @relation(fields: [contentItemId], references: [id])
+  message       String
+  metadata      Json?
+  createdAt     DateTime     @default(now())
+
+  @@map("content_curation_logs")
+}
+
+model AgentRun {
+  id            String    @id @default(uuid())
+  status        String    // RUNNING, COMPLETED, FAILED
+  itemsFound    Int       @default(0)
+  itemsApproved Int       @default(0)
+  itemsRejected Int       @default(0)
+  error         String?
+  metadata      Json?
+  startedAt     DateTime  @default(now())
+  completedAt   DateTime?
+  createdAt     DateTime  @default(now())
+
+  @@map("agent_runs")
+}
+
+// ============================================================
+// Legacy Models (Read-Only — Preserve Historical Data)
+// ============================================================
+
+model SubjectLegacy {
+  id             String          @id @default(uuid())
+  name           String          @unique
+  color          String
+  icon           String?
+
+  @@map("subjects_legacy")
+}
+
+model Assignment {
+  id          String       @id @default(uuid())
+  title       String
+  description String
+  weekNumber  Int
+  subjectId   String
+  subject     Subject      @relation(fields: [subjectId], references: [id])
+  questions   Json
+  maxMarks    Int
+  dueDate     DateTime
+  timeLimit   Int?
+  createdAt   DateTime     @default(now())
+  submissions Submission[]
+
+  @@map("assignments")
+}
+
+model Submission {
+  id           String     @id @default(uuid())
+  userId       String
+  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id])
+  answers      Json
+  score        Int
+  maxMarks     Int
+  feedback     String?
+  status       String
+  submittedAt  DateTime   @default(now())
+  startedAt    DateTime?
+  timeTaken    Int?
+
+  @@map("submissions")
+}
+
+model StudyMaterial {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  type        String
+  url         String?
+  subjectId   String
+  subject     Subject      @relation(fields: [subjectId], references: [id])
+  topic       String
+  bookmarked  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@map("study_materials")
+}
+
+// ============================================================
+// Gamification: Badges & Challenges
+// ============================================================
+
+model WeeklyChallenge {
+  id          String    @id @default(uuid())
+  title       String
+  description String
+  target      Int       // e.g., 5 assignments
+  type        String    // ASSIGNMENTS_COMPLETED, PERFECT_SCORES, MINUTES_STUDIED
+  points      Int       @default(50)
+  startDate   DateTime
+  endDate     DateTime
+  isActive    Boolean   @default(true)
+  
+  userChallenges UserChallenge[]
+
+  @@map("weekly_challenges")
+}
+
+model UserChallenge {
+  id          String          @id @default(uuid())
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  challengeId String
+  challenge   WeeklyChallenge @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  progress    Int             @default(0)
+  isCompleted Boolean         @default(false)
+  completedAt DateTime?
+
+  @@unique([userId, challengeId])
+  @@map("user_challenges")
+}
+
+model Badge {
+  id          String     @id @default(uuid())
+  name        String     @unique
+  description String
+  icon        String
+  category    String     // FIRST_STEPS, CONSISTENCY, MASTERY, SPEED, SPECIAL
+  condition   String     // JSON string defining unlock condition
+  points      Int        @default(10)
+  createdAt   DateTime   @default(now())
+  userBadges  UserBadge[]
+
+  @@map("badges")
+}
+
+model UserBadge {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId   String
+  badge     Badge    @relation(fields: [badgeId], references: [id])
+  earnedAt  DateTime @default(now())
+
+  @@unique([userId, badgeId])
+  @@map("user_badges")
+}

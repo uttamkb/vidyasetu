@@ -1,0 +1,26 @@
+import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
+import path from "path";
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "src"),
+    },
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./vitest.setup.ts"],
+    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html"],
+      include: ["src/lib/utils.ts", "src/components/ui/button.tsx", "src/app/page.tsx"],
+      exclude: ["**/*.d.ts", "**/node_modules/**"],
+    },
+    // Allow tests that don't import React to run without DOM mocks
+    pool: "forks",
+  },
+});
