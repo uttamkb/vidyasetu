@@ -1,0 +1,78 @@
+version: "2"
+type: backend
+tech_stack:
+  - TypeScript
+  - Next.js 16
+  - Prisma ORM
+  - Neon PostgreSQL
+  - Google Gemini AI
+  - NextAuth.js
+features:
+  - name: Assignment Management
+    description: APIs for creating, listing, and generating AI assignments.
+    files:
+      - src/app/api/assignments/route.ts
+      - src/app/api/assignments/[id]/route.ts
+      - src/app/api/assignments/generate/route.ts
+    endpoints:
+      - method: GET
+        path: /api/assignments
+        description: List all assignments for the user
+        auth_required: true
+      - method: POST
+        path: /api/assignments/generate
+        description: Generate a new AI assignment
+        auth_required: true
+  - name: Submission and Evaluation
+    description: APIs for submitting assignment answers and retrieving evaluation.
+    files:
+      - src/app/api/submissions/route.ts
+      - src/app/api/submissions/[id]/route.ts
+    endpoints:
+      - method: POST
+        path: /api/submissions
+        description: Submit an assignment
+        auth_required: true
+      - method: GET
+        path: /api/submissions/[id]
+        description: Get submission results
+        auth_required: true
+  - name: Progress Tracking
+    description: APIs for user progress, mastery levels, and trends.
+    files:
+      - src/app/api/progress/route.ts
+      - src/app/api/progress/mastery/route.ts
+      - src/app/api/progress/trends/route.ts
+    endpoints:
+      - method: GET
+        path: /api/progress/mastery
+        description: Get topic mastery map
+        auth_required: true
+      - method: GET
+        path: /api/progress/trends
+        description: Get mastery trends over time
+        auth_required: true
+  - name: Recommendations
+    description: AI-driven remedial and enrichment recommendations.
+    files:
+      - src/app/api/recommendations/route.ts
+      - src/app/api/recommendations/remedial/route.ts
+    endpoints:
+      - method: GET
+        path: /api/recommendations
+        description: Get study recommendations
+        auth_required: true
+      - method: POST
+        path: /api/recommendations/remedial
+        description: Generate remedial assignment for weak topics
+        auth_required: true
+  - name: Curriculum
+    description: Curriculum data retrieval.
+    files:
+      - src/app/api/curriculum/route.ts
+    endpoints:
+      - method: GET
+        path: /api/curriculum
+        description: Get curriculum structure
+        auth_required: false
+known_limitations: []

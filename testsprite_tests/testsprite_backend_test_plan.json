@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "post apiassignmentsgenerate valid payload success",
+    "description": "Verify that POST /api/assignments/generate with valid authorization and correct payload successfully generates an AI assignment and returns 201 with assignmentId and isAIGenerated true."
+  },
+  {
+    "id": "TC002",
+    "title": "post apiassignmentsgenerate missing required field error",
+    "description": "Verify that POST /api/assignments/generate with authorization but missing required fields returns 400 validation error and prevents assignment generation."
+  },
+  {
+    "id": "TC003",
+    "title": "get apiassignments unauthorized access",
+    "description": "Verify that GET /api/assignments without authorization returns 401 Unauthorized error."
+  },
+  {
+    "id": "TC004",
+    "title": "post apiassignmentsgenerate ai provider error handling",
+    "description": "Verify that POST /api/assignments/generate with valid payload but AI provider rate-limit or error returns 502 or 500 with 'AI provider error' message and client shows retry option."
+  },
+  {
+    "id": "TC005",
+    "title": "post apisubmissions valid submission processing",
+    "description": "Verify that POST /api/submissions with valid authorization and payload returns 201 with submissionId and status processing or completed, and subsequent GET /api/submissions/[id] returns evaluation results including percentageScore, aiFeedback, perQuestionFeedback, and evaluatedAt."
+  },
+  {
+    "id": "TC006",
+    "title": "post apisubmissions invalid payload error",
+    "description": "Verify that POST /api/submissions with authorization but missing answers or invalid answer format returns 400 validation error and prevents submission retry."
+  },
+  {
+    "id": "TC007",
+    "title": "get apisubmissionsid unauthorized access",
+    "description": "Verify that GET /api/submissions/[id] without authorization returns 401 Unauthorized error."
+  },
+  {
+    "id": "TC008",
+    "title": "get apiprogressmastery authorized access",
+    "description": "Verify that GET /api/progress/mastery with valid authorization returns 200 with topic mastery map including subtopics with mastery scores and color codes."
+  },
+  {
+    "id": "TC009",
+    "title": "get apirecommendations authorized access",
+    "description": "Verify that GET /api/recommendations with valid authorization returns 200 with a list of recommended topics and actions, and handles empty recommendations gracefully."
+  },
+  {
+    "id": "TC010",
+    "title": "get apicurriculum public access",
+    "description": "Verify that GET /api/curriculum without authorization returns 200 with the full curriculum tree including subjects, chapters, topics, and metadata for client rendering."
+  }
+]

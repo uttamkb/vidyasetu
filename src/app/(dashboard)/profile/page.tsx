@@ -68,26 +68,29 @@ export default async function ProfilePage() {
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Profile</h1>
-        <p className="text-muted-foreground">Manage your account and view achievements.</p>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+        <div>
+          <h1 className="text-4xl font-heading font-black tracking-tight">Profile</h1>
+          <p className="text-muted-foreground text-lg mt-1">Manage your account and view achievements.</p>
+        </div>
       </div>
 
       {/* Profile Card */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="flex items-center justify-between">
+      <Card className="border-none shadow-premium bg-gradient-to-br from-primary/5 via-blue-500/5 to-transparent overflow-hidden">
+        <div className="h-1 w-full bg-gradient-to-r from-primary to-indigo-500" />
+        <CardContent className="pt-8">
+          <div className="flex items-start sm:items-center justify-between flex-col sm:flex-row gap-4">
             <div className="flex items-center gap-6">
-              <Avatar className="h-20 w-20">
+              <Avatar className="h-24 w-24 border-4 border-background shadow-sm">
                 <AvatarImage src={user.image || ""} alt={user.name || ""} />
                 <AvatarFallback className="text-2xl">
                   {user.name?.charAt(0) || "S"}
                 </AvatarFallback>
               </Avatar>
               <div>
-                <h2 className="text-2xl font-bold">{user.name || "Student"}</h2>
+                <h2 className="text-3xl font-heading font-bold">{user.name || "Student"}</h2>
                 <p className="text-muted-foreground">{user.email}</p>
-                <div className="flex items-center gap-2 mt-2">
+                <div className="flex items-center gap-2 mt-3">
                   <Badge variant="secondary">Class {user.grade}</Badge>
                   <Badge variant="outline">{user.board}</Badge>
                 </div>
@@ -108,45 +111,45 @@ export default async function ProfilePage() {
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card className="shadow-sm hover:shadow-premium transition-all duration-300 border-border/50 hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Assignments</CardTitle>
+            <CardTitle className="text-xs font-heading font-bold text-muted-foreground uppercase tracking-wider">Assignments</CardTitle>
             <BookOpen className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.completedSubmissions}</div>
-            <p className="text-xs text-muted-foreground">Completed</p>
+            <div className="text-3xl font-black tabular-nums">{stats.completedSubmissions}</div>
+            <p className="text-xs text-muted-foreground mt-1 font-medium">Completed</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-sm hover:shadow-premium transition-all duration-300 border-border/50 hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Average Score</CardTitle>
+            <CardTitle className="text-xs font-heading font-bold text-muted-foreground uppercase tracking-wider">Average Score</CardTitle>
             <GraduationCap className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.averageScore}%</div>
-            <p className="text-xs text-muted-foreground">Overall</p>
+            <div className="text-3xl font-black tabular-nums">{stats.averageScore}%</div>
+            <p className="text-xs text-muted-foreground mt-1 font-medium">Overall</p>
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="shadow-sm hover:shadow-premium transition-all duration-300 border-border/50 hover:-translate-y-1">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Study Streak</CardTitle>
+            <CardTitle className="text-xs font-heading font-bold text-muted-foreground uppercase tracking-wider">Study Streak</CardTitle>
             <Flame className="h-4 w-4 text-orange-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats.studyStreak} days</div>
-            <p className="text-xs text-muted-foreground">Keep it up!</p>
+            <div className="text-3xl font-black tabular-nums">{stats.studyStreak} days</div>
+            <p className="text-xs text-muted-foreground mt-1 font-medium">Keep it up!</p>
           </CardContent>
         </Card>
       </div>
 
       {/* Badges */}
-      <Card>
+      <Card className="shadow-premium border-border/50">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Award className="h-5 w-5" />
+          <CardTitle className="text-xl font-heading font-bold flex items-center gap-2">
+            <Award className="h-6 w-6 text-amber-500" />
             Achievements
           </CardTitle>
           <CardDescription>Badges earned through your learning journey</CardDescription>
@@ -173,9 +176,9 @@ export default async function ProfilePage() {
       </Card>
 
       {/* Account Info */}
-      <Card>
+      <Card className="shadow-premium border-border/50">
         <CardHeader>
-          <CardTitle>Account Information</CardTitle>
+          <CardTitle className="text-xl font-heading font-bold">Account Information</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="flex items-center gap-3">

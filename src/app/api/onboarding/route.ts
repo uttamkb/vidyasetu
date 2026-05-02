@@ -7,6 +7,10 @@ const onboardingSchema = z.object({
   hardestSubjects: z.array(z.string()).min(1, "Select at least one subject"),
   targetScore: z.number().min(0).max(100),
   studyTimePreference: z.string().min(1, "Select a study time preference"),
+  // Location fields for leaderboard scoping
+  state: z.string().min(1, "State is required").max(100),
+  district: z.string().max(100).optional(),
+  school: z.string().max(200).optional(),
 });
 
 export async function PATCH(req: Request) {
@@ -29,6 +33,9 @@ export async function PATCH(req: Request) {
         hardestSubjects: validatedData.hardestSubjects,
         targetScore: validatedData.targetScore,
         studyTimePreference: validatedData.studyTimePreference,
+        state: validatedData.state,
+        district: validatedData.district ?? null,
+        school: validatedData.school ?? null,
         isOnboarded: true,
       },
     });

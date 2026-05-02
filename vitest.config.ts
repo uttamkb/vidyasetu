@@ -17,7 +17,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      include: ["src/lib/utils.ts", "src/components/ui/button.tsx", "src/app/page.tsx"],
+      include: ["src/**/*.{ts,tsx}"],
       exclude: ["**/*.d.ts", "**/node_modules/**"],
     },
     // Allow tests that don't import React to run without DOM mocks

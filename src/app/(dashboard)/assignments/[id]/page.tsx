@@ -39,7 +39,22 @@ export default async function AssignmentDetailPage({ params }: { params: Promise
     notFound();
   }
 
-  const questions = assignment.questions as any[];
+  // The questions field holds [{questionId, orderIndex}] pointers.
+  const questions = (assignment.questions as unknown as Array<{ questionId: string; orderIndex: number }>) || [];
+
+  const questionIds = questions.map((q) => q.questionId);
+  const fetchedQuestions = await prisma.question.findMany({
+    where: { id: { in: questionIds } },
+  });
+
+  // Map pointers to their full question data
+  const fullQuestions = questions.map((pointer) => {
+    const q = fetchedQuestions.find((fq) => fq.id === pointer.questionId);
+    return {
+      pointer,
+      question: q || null,
+    };
+  });
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
@@ -62,11 +77,13 @@ export default async function AssignmentDetailPage({ params }: { params: Promise
               <BookOpen className="h-4 w-4 text-muted-foreground" />
               <span>{assignment.subject.name}</span>
             </div>
-            <Badge variant="outline">Week {assignment.weekNumber}</Badge>
-            <div className="flex items-center gap-2">
-              <Clock className="h-4 w-4 text-muted-foreground" />
-              <span>Due: {new Date(assignment.dueDate).toLocaleDateString("en-IN")}</span>
-            </div>
+            <Badge variant="outline">{assignment.type}</Badge>
+            {assignment.dueDate && (
+              <div className="flex items-center gap-2">
+                <Clock className="h-4 w-4 text-muted-foreground" />
+                <span>Due: {new Date(assignment.dueDate).toLocaleDateString("en-IN")}</span>
+              </div>
+            )}
             <Badge variant="secondary">Max Marks: {assignment.maxMarks}</Badge>
             {assignment.timeLimit && (
               <Badge variant="secondary">Time Limit: {assignment.timeLimit} min</Badge>
@@ -86,10 +103,10 @@ export default async function AssignmentDetailPage({ params }: { params: Promise
           <CardContent>
             <div className="text-center py-4">
               <p className="text-4xl font-bold text-green-600 dark:text-green-400">
-                {assignment.submission.score}/{assignment.maxMarks}
+                {assignment.submission.totalScore}/{assignment.maxMarks}
               </p>
               <p className="text-muted-foreground mt-2">
-                {Math.round((assignment.submission.score / assignment.maxMarks) * 100)}% Score
+                {Math.round((assignment.submission.totalScore / assignment.maxMarks) * 100)}% Score
               </p>
             </div>
             <Link href={`/submissions/${assignment.submission.id}`}>
@@ -100,7 +117,7 @@ export default async function AssignmentDetailPage({ params }: { params: Promise
       ) : (
         <AssignmentForm
           assignmentId={assignment.id}
-          questions={questions}
+          fullQuestions={fullQuestions as any}
           maxMarks={assignment.maxMarks}
           timeLimit={assignment.timeLimit}
         />

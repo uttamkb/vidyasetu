@@ -6,8 +6,26 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
-import { CheckCircle2, XCircle, AlertCircle, ArrowLeft } from "lucide-react";
+import { CheckCircle2, XCircle, AlertCircle, ArrowLeft, Sparkles, BookOpen, ChevronRight } from "lucide-react";
 import Link from "next/link";
+import { getRecommendations } from "@/services/recommendation-engine";
+import { RetryWeakTopicsButton } from "./retry-button";
+import { PrintButton } from "@/components/print-button";
+
+// Legacy question shape stored in Assignment.questions Json field
+interface LegacyQuestion {
+  question: string;
+  type: "MCQ" | "SHORT_ANSWER" | "LONG_ANSWER";
+  correctAnswer: string;
+  marks: number;
+  keywords?: string[];
+}
+
+// Legacy answer shape stored in Submission.answers Json field
+interface LegacyAnswer {
+  questionIndex: number;
+  answer: string;
+}
 
 async function getSubmission(id: string, userId: string) {
   const submission = await prisma.submission.findFirst({
@@ -18,7 +36,6 @@ async function getSubmission(id: string, userId: string) {
       },
     },
   });
-
   return submission;
 }
 
@@ -27,15 +44,18 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
   if (!session?.user?.id) redirect("/login");
 
   const { id } = await params;
-  const submission = await getSubmission(id, session.user.id);
+  const [submission, recommendations] = await Promise.all([
+    getSubmission(id, session.user.id),
+    getRecommendations(session.user.id, 3),
+  ]);
 
   if (!submission) {
     notFound();
   }
 
-  const questions = submission.assignment.questions as any[];
-  const answers = submission.answers as any[];
-  const percentage = Math.round((submission.score / submission.maxMarks) * 100);
+  const questions = submission.assignment.questions as unknown as LegacyQuestion[];
+  const answers = submission.answers as unknown as LegacyAnswer[];
+  const percentage = Math.round((submission.totalScore / submission.maxMarks) * 100);
 
   const getScoreColor = (pct: number) => {
     if (pct >= 70) return "text-green-600";
@@ -51,16 +71,19 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
 
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
-      <div className="flex items-center gap-4">
-        <Link href="/assignments">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Submission Result</h1>
-          <p className="text-muted-foreground">{submission.assignment.title}</p>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <Link href="/assignments" className="print:hidden">
+            <Button variant="ghost" size="icon">
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight">Submission Result</h1>
+            <p className="text-muted-foreground">{submission.assignment.title}</p>
+          </div>
         </div>
+        <PrintButton />
       </div>
 
       {/* Score Overview */}
@@ -68,7 +91,7 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
         <CardContent className="py-8">
           <div className="text-center">
             <p className={`text-5xl font-bold ${getScoreColor(percentage)}`}>
-              {submission.score}/{submission.maxMarks}
+              {submission.totalScore}/{submission.maxMarks}
             </p>
             <div className="flex items-center justify-center gap-2 mt-2">
               <Badge className={getScoreBadge(percentage)}>{percentage}%</Badge>
@@ -89,7 +112,7 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
               <div className={`w-3 h-3 rounded-full ${submission.assignment.subject.color}`} />
               <span>{submission.assignment.subject.name}</span>
             </div>
-            <Badge variant="outline">Week {submission.assignment.weekNumber}</Badge>
+            <Badge variant="outline">{submission.assignment.type}</Badge>
             <Badge variant="secondary">Max Marks: {submission.maxMarks}</Badge>
             <span className="text-muted-foreground">
               Submitted: {new Date(submission.submittedAt).toLocaleString("en-IN")}
@@ -190,21 +213,90 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
         </div>
       </div>
 
-      {/* Feedback */}
-      {submission.feedback && (
+      {/* AI Feedback */}
+      {submission.aiFeedback && (
         <Card>
           <CardHeader>
-            <CardTitle>Feedback Summary</CardTitle>
+            <CardTitle>AI Feedback Summary</CardTitle>
           </CardHeader>
           <CardContent>
-            <pre className="text-sm whitespace-pre-wrap font-sans">{submission.feedback}</pre>
+            <pre className="text-sm whitespace-pre-wrap font-sans">{submission.aiFeedback}</pre>
           </CardContent>
         </Card>
       )}
 
-      <div className="flex justify-center pb-8">
+      {/* Your Learning Path */}
+      <Card className="border-amber-400/20 bg-gradient-to-br from-amber-500/5 to-transparent print:hidden">
+        <CardHeader className="pb-3">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-amber-500" />
+            <CardTitle className="text-base">Your Learning Path — What to Study Next</CardTitle>
+          </div>
+          <CardDescription>
+            Based on your mastery data, focus on these topics to improve your score.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {recommendations.length === 0 ? (
+            <div className="flex items-center gap-3 py-4 text-center justify-center">
+              <CheckCircle2 className="h-8 w-8 text-emerald-500" />
+              <div>
+                <p className="font-medium text-sm">Great work — no weak areas found!</p>
+                <p className="text-xs text-muted-foreground">
+                  Complete more assignments to get personalised recommendations.
+                </p>
+              </div>
+            </div>
+          ) : (
+            recommendations.map((rec, i) => (
+              <div
+                key={i}
+                className="flex items-start gap-3 p-3 rounded-lg bg-background/60 border border-border/50"
+              >
+                <div
+                  className={`mt-1 w-2 h-2 rounded-full shrink-0 ${
+                    rec.priority === "HIGH"
+                      ? "bg-rose-500"
+                      : rec.priority === "MEDIUM"
+                      ? "bg-amber-400"
+                      : "bg-blue-400"
+                  }`}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{rec.subtopicName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {rec.subjectName} · {rec.chapterName}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{rec.reason}</p>
+                </div>
+                {rec.type === "STUDY_MATERIAL" ? (
+                  <Link href="/study-materials" className="shrink-0">
+                    <Badge variant="outline" className="text-xs cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors">
+                      <BookOpen className="h-3 w-3 mr-1" /> Study
+                    </Badge>
+                  </Link>
+                ) : (
+                  <div className="shrink-0">
+                    <RetryWeakTopicsButton
+                      subtopicId={rec.subtopicId}
+                      subtopicName={rec.subtopicName}
+                    />
+                  </div>
+                )}
+              </div>
+            ))
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="flex justify-between pb-8 print:hidden">
         <Link href="/assignments">
           <Button variant="outline">Back to Assignments</Button>
+        </Link>
+        <Link href="/dashboard">
+          <Button className="gap-2">
+            Go to Dashboard <ChevronRight className="h-4 w-4" />
+          </Button>
         </Link>
       </div>
     </div>

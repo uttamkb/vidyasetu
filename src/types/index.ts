@@ -1,84 +1,161 @@
-export interface Question {
-  question: string;
+// ─────────────────────────────────────────────────────────
+// Shared Frontend Types for VidyaSetu MVP
+// ─────────────────────────────────────────────────────────
+
+export interface AssignmentSummary {
+  id: string;
+  title: string;
+  type: "CHAPTER" | "SEMESTER" | "FULL_SYLLABUS" | "REMEDIAL" | "DIAGNOSTIC";
+  difficulty: "EASY" | "MEDIUM" | "HARD" | "MIXED";
+  maxMarks: number;
+  timeLimit: number | null;
+  isAIGenerated: boolean;
+  questionCount: number;
+  dueDate: Date | null;
+  createdAt: Date;
+  subject: {
+    id: string;
+    name: string;
+    color: string;
+    icon: string | null;
+  };
+  chapter: {
+    id: string;
+    name: string;
+  } | null;
+  submission: SubmissionSummary | null;
+  status: "NOT_STARTED" | "IN_PROGRESS" | "SUBMITTED" | "EVALUATED";
+}
+
+export interface AssignmentQuestion {
+  id: string;
+  orderIndex: number;
+  type: "MCQ" | "SHORT_ANSWER" | "LONG_ANSWER" | "NUMERIC";
+  difficulty: number;
+  bloomLevel: string;
+  subtopic: {
+    id: string;
+    name: string;
+    topic: { id: string; name: string; chapter: { id: string; name: string } };
+  };
+  content: {
+    question: string;
+    options?: string[];
+    maxMarks: number;
+    // correctAnswer excluded from client payload during test
+  };
+}
+
+export interface SubmissionSummary {
+  id: string;
+  status: "IN_PROGRESS" | "SUBMITTED" | "EVALUATED";
+  totalScore: number;
+  percentageScore: number;
+  submittedAt: Date;
+}
+
+export interface EvaluatedAnswer {
+  questionId: string;
+  questionText: string;
   options?: string[];
   correctAnswer: string;
-  type: "MCQ" | "SHORT_ANSWER" | "LONG_ANSWER";
-  marks: number;
-  keywords?: string[];
-}
-
-export interface Answer {
-  questionIndex: number;
-  answer: string;
-}
-
-export interface AssignmentWithSubject {
-  id: string;
-  title: string;
-  description: string;
-  weekNumber: number;
-  subjectId: string;
-  subject: {
-    name: string;
-    color: string;
-  };
+  userAnswer: string | number | null;
+  isCorrect: boolean;
+  marksAwarded: number;
   maxMarks: number;
-  dueDate: Date;
-  timeLimit: number | null;
-  questions: Question[];
-  createdAt: Date;
-}
-
-export interface SubmissionWithAssignment {
-  id: string;
-  userId: string;
-  assignmentId: string;
-  assignment: AssignmentWithSubject;
-  answers: Answer[];
-  score: number;
-  maxMarks: number;
-  feedback: string | null;
-  status: string;
-  submittedAt: Date;
-  startedAt: Date | null;
-  timeTaken: number | null;
-}
-
-export interface StudyMaterialWithSubject {
-  id: string;
-  title: string;
-  description: string | null;
+  feedback: string;
+  correction: string;
+  explanation: string;
   type: string;
-  url: string | null;
-  subjectId: string;
-  subject: {
-    name: string;
-    color: string;
+  subtopicName?: string;
+  topicName?: string;
+  chapterName?: string;
+}
+
+export interface SubmissionResult {
+  id: string;
+  status: "EVALUATED";
+  totalScore: number;
+  maxMarks: number;
+  percentageScore: number;
+  aiFeedback: string | null;
+  submittedAt: Date;
+  evaluatedAt: Date | null;
+  timeTaken: number | null;
+  assignment: {
+    id: string;
+    title: string;
+    type: string;
+    difficulty: string;
+    subject: { id: string; name: string; color: string };
+    chapter: { id: string; name: string } | null;
   };
-  topic: string;
-  bookmarked: boolean;
-  createdAt: Date;
+  stats: {
+    total: number;
+    correct: number;
+    incorrect: number;
+    accuracy: number;
+  };
+  answers: EvaluatedAnswer[];
 }
 
-export interface DashboardStats {
-  totalAssignments: number;
-  pendingAssignments: number;
-  submissionsThisWeek: number;
-  averageScore: number;
-  studyStreak: number;
+export interface MasterySubtopic {
+  id: string;
+  name: string;
+  difficulty: number;
+  masteryScore: number;
+  lastPracticed: Date | null;
+  totalAttempts: number;
+  correctAttempts: number;
+  status: "mastered" | "learning" | "weak" | "not_started";
 }
 
-export interface SubjectProgress {
-  subjectId: string;
-  subjectName: string;
+export interface MasteryTopic {
+  id: string;
+  name: string;
+  orderIndex: number;
+  avgMastery: number;
+  subtopics: MasterySubtopic[];
+}
+
+export interface MasteryChapter {
+  id: string;
+  name: string;
+  orderIndex: number;
+  avgMastery: number;
+  topics: MasteryTopic[];
+}
+
+export interface MasterySubject {
+  id: string;
+  name: string;
   color: string;
-  totalAssignments: number;
-  completedAssignments: number;
-  averageScore: number;
+  icon: string | null;
+  chapters: MasteryChapter[];
 }
 
-export interface WeeklyProgress {
-  weekNumber: number;
-  averageScore: number;
-  completedAssignments: number;
+export interface LeaderboardEntry {
+  rank: number;
+  userId: string;
+  name: string;
+  image: string | null;
+  school: string | null;
+  district: string | null;
+  state: string | null;
+  avgScore: number;
+  submissionCount: number;
+  isCurrentUser: boolean;
+}
+
+export interface Recommendation {
+  type: "STUDY_MATERIAL" | "REMEDIAL_ASSIGNMENT" | "TOPIC_REVIEW";
+  priority: "HIGH" | "MEDIUM" | "LOW";
+  subtopicId: string;
+  subtopicName: string;
+  topicName: string;
+  chapterName: string;
+  subjectName: string;
+  masteryScore: number;
+  reason: string;
+  action: string;
 }

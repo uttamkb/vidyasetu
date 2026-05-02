@@ -1,37 +1,35 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Clock, AlertCircle } from "lucide-react";
+import { Clock, AlertCircle, Palette } from "lucide-react";
+import { DrawingCanvas } from "@/components/drawing-canvas";
 
-interface Question {
-  question: string;
-  options?: string[];
-  correctAnswer: string;
-  type: "MCQ" | "SHORT_ANSWER" | "LONG_ANSWER";
-  marks: number;
-  keywords?: string[];
+/**
+ * QuestionPointer — new schema shape stored in Assignment.questions Json field.
+ * Points to a Question row in the questions table.
+ */
+export interface QuestionPointer {
+  questionId: string;
+  orderIndex: number;
 }
 
 export default function AssignmentForm({
   assignmentId,
-  questions,
+  fullQuestions,
   timeLimit,
 }: {
   assignmentId: string;
-  questions: Question[];
+  fullQuestions: Array<{ pointer: QuestionPointer, question: any }>;
   maxMarks: number;
   timeLimit: number | null;
 }) {
   const router = useRouter();
   const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [showCanvas, setShowCanvas] = useState<Record<number, boolean>>({});
   const [timeLeft, setTimeLeft] = useState(timeLimit ? timeLimit * 60 : null);
   const [submitting, setSubmitting] = useState(false);
   const [started, setStarted] = useState(false);
@@ -46,16 +44,21 @@ export default function AssignmentForm({
     if (submitting) return;
     setSubmitting(true);
 
-    const answersArray = Object.entries(answers).map(([index, answer]) => ({
-      questionIndex: parseInt(index),
-      answer,
-    }));
+    const answersArray = Object.entries(answers).map(([index, answer]) => {
+      const parsedIndex = parseInt(index);
+      const qPointer = fullQuestions[parsedIndex]?.pointer;
+      return {
+        questionId: qPointer?.questionId || qPointer?.id,
+        questionIndex: parsedIndex,
+        userAnswer: answer,
+      };
+    });
 
     try {
-      const res = await fetch(`/api/assignments/${assignmentId}/submit`, {
+      const res = await fetch(`/api/submissions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: answersArray }),
+        body: JSON.stringify({ assignmentId, answers: answersArray }),
       });
 
       const data = await res.json();
@@ -71,28 +74,29 @@ export default function AssignmentForm({
     }
   };
 
-  const handleTimeUp = useCallback(() => {
+  const handleTimeUp = () => {
     handleSubmit();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  };
 
   const handleStart = async () => {
     setStarted(true);
     await fetch(`/api/assignments/${assignmentId}/start`, { method: "POST" });
   };
 
+  const handleTimeUpRef = useRef(handleTimeUp);
+  handleTimeUpRef.current = handleTimeUp;
+
   useEffect(() => {
     if (!timeLeft || !started) return;
     if (timeLeft <= 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      handleTimeUp();
+      handleTimeUpRef.current();
       return;
     }
     const timer = setInterval(() => {
       setTimeLeft((prev) => (prev ? prev - 1 : null));
     }, 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, started, handleTimeUp]);
+  }, [timeLeft, started]);
 
   if (!started) {
     return (
@@ -102,12 +106,7 @@ export default function AssignmentForm({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2 text-sm">
-            <p>This assignment contains:</p>
-            <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-              <li>{questions.filter((q) => q.type === "MCQ").length} Multiple Choice Questions</li>
-              <li>{questions.filter((q) => q.type === "SHORT_ANSWER").length} Short Answer Questions</li>
-              <li>{questions.filter((q) => q.type === "LONG_ANSWER").length} Long Answer Questions</li>
-            </ul>
+            <p>This assignment contains <strong>{fullQuestions.length}</strong> questions.</p>
             {timeLimit && (
               <div className="flex items-center gap-2 text-amber-600">
                 <Clock className="h-4 w-4" />
@@ -115,7 +114,7 @@ export default function AssignmentForm({
               </div>
             )}
           </div>
-          <Button onClick={handleStart} className="w-full" size="lg">
+          <Button onClick={handleStart} className="w-full bg-primary hover:bg-primary/90 shadow-premium" size="lg">
             Start Assignment
           </Button>
         </CardContent>
@@ -126,68 +125,141 @@ export default function AssignmentForm({
   return (
     <div className="space-y-4">
       {timeLeft !== null && (
-        <div className="sticky top-16 z-40 bg-background border rounded-lg p-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Clock className="h-4 w-4" />
-            <span className="font-mono font-bold">
-              {formatTime(timeLeft)}
-            </span>
+        <div className="sticky top-4 z-40 glass rounded-xl p-4 flex items-center justify-between border-primary/10">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-full">
+              <Clock className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-bold">Time Remaining</p>
+              <span className="font-mono text-xl font-black tabular-nums leading-none">
+                {formatTime(timeLeft)}
+              </span>
+            </div>
           </div>
           {timeLeft < 300 && (
-            <div className="flex items-center gap-2 text-red-500">
+            <div className="flex items-center gap-2 px-3 py-1 bg-red-500/10 text-red-600 rounded-full animate-pulse">
               <AlertCircle className="h-4 w-4" />
-              <span className="text-sm font-medium">Less than 5 minutes!</span>
+              <span className="text-xs font-bold uppercase tracking-wide">Closing Soon</span>
             </div>
           )}
         </div>
       )}
 
-      {questions.map((question, index) => (
-        <Card key={index}>
+      {fullQuestions.map((item, index) => {
+        const qData = item.question?.content;
+        return (
+        <Card key={item.pointer.questionId} className="border-none shadow-premium overflow-hidden">
+          <div className="h-1 w-full bg-gradient-to-r from-primary/50 to-transparent" />
           <CardHeader className="pb-3">
             <div className="flex items-start justify-between gap-4">
               <CardTitle className="text-base font-medium">
-                Q{index + 1}. {question.question}
+                Question {index + 1}
               </CardTitle>
-              <Badge variant="secondary">{question.marks} marks</Badge>
+              <Badge variant="outline">ID: {item.pointer.questionId.slice(0, 8)}&hellip;</Badge>
             </div>
           </CardHeader>
           <CardContent>
-            {question.type === "MCQ" && question.options ? (
-              <RadioGroup
-                value={answers[index] || ""}
-                onValueChange={(value) =>
-                  setAnswers((prev) => ({ ...prev, [index]: value }))
-                }
-              >
-                <div className="space-y-2">
-                  {question.options.map((option, optIndex) => (
-                    <div key={optIndex} className="flex items-center space-x-2">
-                      <RadioGroupItem value={option} id={`q${index}-opt${optIndex}`} />
-                      <Label htmlFor={`q${index}-opt${optIndex}`}>{option}</Label>
-                    </div>
-                  ))}
-                </div>
-              </RadioGroup>
+            {qData ? (
+              <div className="mb-4">
+                <p className="text-sm font-medium mb-4">{qData.question}</p>
+                {qData.options && qData.options.length > 0 ? (
+                  <div className="space-y-2 mb-3">
+                    {qData.options.map((opt: string, i: number) => {
+                      const optionLetter = String.fromCharCode(65 + i);
+                      const isSelected = answers[index] === optionLetter || answers[index] === opt;
+                      return (
+                        <div
+                          key={i}
+                          onClick={() => setAnswers((prev) => ({ ...prev, [index]: optionLetter }))}
+                          className={`flex items-center gap-3 p-3 border rounded-md cursor-pointer transition-colors ${
+                            isSelected ? "bg-primary/10 border-primary" : "hover:bg-muted/50"
+                          }`}
+                        >
+                          <div className={`flex items-center justify-center w-6 h-6 rounded-full border text-xs font-medium ${
+                            isSelected ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"
+                          }`}>
+                            {optionLetter}
+                          </div>
+                          <span className="text-sm">{opt}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {showCanvas[index] ? (
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium">Drawing Pad</span>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setShowCanvas((prev) => ({ ...prev, [index]: false }))}
+                          >
+                            Close Canvas
+                          </Button>
+                        </div>
+                        <DrawingCanvas 
+                          initialDataUrl={answers[index]?.startsWith("data:image") ? answers[index] : undefined}
+                          onDrawEnd={(dataUrl) => setAnswers((prev) => ({ ...prev, [index]: dataUrl }))} 
+                        />
+                      </div>
+                    ) : (
+                      <>
+                        {answers[index]?.startsWith("data:image") ? (
+                          <div className="space-y-2">
+                            <img src={answers[index]} alt="Drawing" className="max-h-32 border rounded" />
+                            <div className="flex gap-2">
+                              <Button variant="outline" size="sm" onClick={() => setShowCanvas((prev) => ({ ...prev, [index]: true }))}>
+                                <Palette className="h-4 w-4 mr-2" /> Edit Drawing
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => setAnswers((prev) => { const next = {...prev}; delete next[index]; return next; })}>
+                                Clear Answer
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <textarea
+                              className="w-full border rounded-md p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
+                              placeholder="Type your explanation or steps here..."
+                              value={answers[index] ?? ""}
+                              onChange={(e) =>
+                                setAnswers((prev) => ({ ...prev, [index]: e.target.value }))
+                              }
+                              rows={4}
+                            />
+                            <div className="flex items-center gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setShowCanvas((prev) => ({ ...prev, [index]: true }))}
+                              >
+                                <Palette className="h-4 w-4 mr-2" /> Open Drawing Pad
+                              </Button>
+                              <p className="text-xs text-muted-foreground">
+                                Use the drawing pad for graphs, geometry, or complex math notation.
+                              </p>
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
             ) : (
-              <Textarea
-                placeholder="Type your answer here..."
-                value={answers[index] || ""}
-                onChange={(e) =>
-                  setAnswers((prev) => ({ ...prev, [index]: e.target.value }))
-                }
-                rows={question.type === "LONG_ANSWER" ? 6 : 3}
-              />
+               <p className="text-sm text-red-500 mb-3">Error loading question content.</p>
             )}
           </CardContent>
         </Card>
-      ))}
-
-      <Separator />
+      )})}
 
       <div className="flex items-center justify-between pb-8">
         <p className="text-sm text-muted-foreground">
-          Answered: {Object.keys(answers).length}/{questions.length}
+          Answered: {Object.keys(answers).length}/{fullQuestions.length}
         </p>
         <Button
           onClick={handleSubmit}

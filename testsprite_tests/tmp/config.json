@@ -1,0 +1,17 @@
+{
+  "status": "commited",
+  "type": "backend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3000",
+  "backendAuthType": "public",
+  "executionArgs": {
+    "projectName": "vidyasetu",
+    "projectPath": "/Users/uttamkumar_barik/Documents/vidyasetu/vidyasetu",
+    "testIds": [],
+    "additionalInstruction": "Ensure >90% pass rate. Focus on critical paths like AI assignment generation and submission evaluation.",
+    "serverMode": "development",
+    "envs": {
+      "API_KEY": "sk-user-IYsbyAz2ZOmDbEaP7CBLsqAwyAYcK_SpNqa9T43LzJgxGdfptdOtHoQw4V9vp7rqvoy-XseuitrhwfeIFBnWpFziINrJowkkkub0T0ZO7jFGTU-u6_xZnLHbMm3ba9Xt8cE"
+    }
+  }
+}

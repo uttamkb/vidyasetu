@@ -45,61 +45,72 @@ model Session {
 // ============================================================
 
 model User {
-  id                String            @id @default(uuid())
-  email             String            @unique
-  name              String?
-  image             String?
-  grade             String            @default("9")
-  board             String            @default("CBSE")
-  
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  name                String?
+  image               String?
+
+  // Academic profile (CBSE only for MVP)
+  grade               String    @default("9")
+  board               String    @default("CBSE")
+
+  // Location (for leaderboard scoping)
+  state               String?
+  district            String?
+  school              String?
+
+  // Role
+  role                String    @default("STUDENT") // "STUDENT" | "ADMIN"
+
+  // Leaderboard
+  leaderboardOptIn    Boolean   @default(false)
+
   // Onboarding
-  isOnboarded       Boolean           @default(false)
-  hardestSubjects   String[]
-  targetScore       Int?
+  isOnboarded         Boolean   @default(false)
+  hardestSubjects     String[]
+  targetScore         Int?
   studyTimePreference String?
 
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  // Gamification
+  xp                  Int       @default(0)
+  level               String    @default("Beginner") // Beginner, Scholar, Topper, Board Ready
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   // Auth.js
-  accounts          Account[]
-  sessions          Session[]
+  accounts            Account[]
+  sessions            Session[]
 
-  // Gamification & Progress
-  xp                Int               @default(0)
-  level             String            @default("Beginner") // Beginner, Scholar, Topper, Board Ready
-  
-  // Learning state
-  userMastery       UserMastery[]
-  practiceSessions  PracticeSession[]
-  studyStreak       StudyStreak?
-  notifications     Notification[]
-  userChallenges    UserChallenge[]
-
-  // Legacy (read-only)
-  submissions       Submission[]
-  userBadges        UserBadge[]
+  // Learning
+  userMastery         UserMastery[]
+  practiceSessions    PracticeSession[]
+  studyStreak         StudyStreak?
+  notifications       Notification[]
+  userChallenges      UserChallenge[]
+  submissions         Submission[]
+  userBadges          UserBadge[]
+  leaderboardEntries  LeaderboardEntry[]
 
   @@map("users")
 }
 
 // ============================================================
-// Curriculum Graph
+// Curriculum Graph  (Subject → Chapter → Topic → Subtopic)
 // ============================================================
 
 model Subject {
-  id        String    @id @default(uuid())
-  name      String
-  grade     String
-  board     String    @default("CBSE")
-  color     String    @default("bg-blue-500")
-  icon      String?
-  orderIndex Int      @default(0)
-  chapters  Chapter[]
-  assignments Assignment[]
+  id         String    @id @default(uuid())
+  name       String
+  grade      String    @default("9")
+  board      String    @default("CBSE")
+  color      String    @default("bg-blue-500")
+  icon       String?
+  orderIndex Int       @default(0)
+
+  chapters       Chapter[]
+  assignments    Assignment[]
   studyMaterials StudyMaterial[]
-  contentSources ContentSource[]
-  contentItems   ContentItem[]
 
   @@unique([name, grade, board])
   @@map("subjects")
@@ -111,36 +122,41 @@ model Chapter {
   subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   name       String
   orderIndex Int      @default(0)
-  topics     Topic[]
+
+  topics         Topic[]
+  assignments    Assignment[]
+  studyMaterials StudyMaterial[]
 
   @@unique([subjectId, name])
   @@map("chapters")
 }
 
 model Topic {
-  id            String     @id @default(uuid())
-  chapterId     String
-  chapter       Chapter    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  name          String
-  orderIndex    Int        @default(0)
-  subtopics     Subtopic[]
+  id        String   @id @default(uuid())
+  chapterId String
+  chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  name      String
+  orderIndex Int     @default(0)
 
-  // Self-relation for prerequisites at topic level
-  prerequisites Topic[]    @relation("TopicPrerequisites")
-  requiredFor   Topic[]    @relation("TopicPrerequisites")
+  subtopics      Subtopic[]
+  studyMaterials StudyMaterial[]
+
+  // Prerequisites
+  prerequisites Topic[] @relation("TopicPrerequisites")
+  requiredFor   Topic[] @relation("TopicPrerequisites")
 
   @@unique([chapterId, name])
   @@map("topics")
 }
 
 model Subtopic {
-  id          String     @id @default(uuid())
+  id          String   @id @default(uuid())
   topicId     String
-  topic       Topic      @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  topic       Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
   name        String
   description String?
-  difficulty  Int        @default(1) // 1-5
-  orderIndex  Int        @default(0)
+  difficulty  Int      @default(1) // 1-5
+  orderIndex  Int      @default(0)
 
   questions   Question[]
   userMastery UserMastery[]
@@ -150,12 +166,13 @@ model Subtopic {
 }
 
 // ============================================================
-// Questions
+// Questions (First-class entities)
 // ============================================================
 
 enum QuestionType {
   MCQ
   SHORT_ANSWER
+  LONG_ANSWER
   NUMERIC
   MATCHING
 }
@@ -168,36 +185,128 @@ enum BloomLevel {
 }
 
 model Question {
-  id                   String       @id @default(uuid())
-  subtopicId           String
-  subtopic             Subtopic     @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
+  id         String       @id @default(uuid())
+  subtopicId String
+  subtopic   Subtopic     @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
 
-  type                 QuestionType
-  bloomLevel           BloomLevel   @default(UNDERSTAND)
-  difficulty           Int          @default(1) // 1-5, calibrated
+  type       QuestionType
+  bloomLevel BloomLevel   @default(UNDERSTAND)
+  difficulty Int          @default(1) // 1-5, calibrated
 
-  // JSON shape: { question: string, options?: string[], correctAnswer: string | number, explanation: string }
-  content              Json
+  // JSON shape: { question: string, options?: string[], correctAnswer: string|number, explanation: string, maxMarks: number }
+  content    Json
 
   // JSON shape: [{ pattern: string, explanation: string }]
   commonMisconceptions Json?
 
-  prerequisiteIds      String[]     // subtopic IDs
+  prerequisiteIds String[] // subtopic IDs
 
-  usageCount           Int          @default(0)
-  avgAccuracy          Float        @default(0)
+  usageCount      Int     @default(0)
+  avgAccuracy     Float   @default(0)
 
-  source               String       @default("curated") // "curated" | "ai_generated"
-  verifiedByHuman      Boolean      @default(false)
+  source          String  @default("curated") // "curated" | "ai_generated"
+  verifiedByHuman Boolean @default(false)
 
-  sessionQuestions     SessionQuestion[]
+  sessionQuestions SessionQuestion[]
 
-  createdAt            DateTime     @default(now())
-  updatedAt            DateTime     @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([subtopicId, difficulty])
   @@index([subtopicId, bloomLevel])
   @@map("questions")
+}
+
+// ============================================================
+// Assignments (AI-generated or admin-created)
+// ============================================================
+
+enum AssignmentType {
+  CHAPTER        // Specific chapter(s)
+  SEMESTER       // Semester-level
+  FULL_SYLLABUS  // All chapters
+  REMEDIAL       // Targeted at weak topics
+  DIAGNOSTIC     // Initial skill assessment
+}
+
+enum DifficultyLevel {
+  EASY
+  MEDIUM
+  HARD
+  MIXED
+}
+
+model Assignment {
+  id          String         @id @default(uuid())
+  title       String
+  description String?
+
+  type        AssignmentType @default(CHAPTER)
+  difficulty  DifficultyLevel @default(MIXED)
+
+  // Scope
+  subjectId   String
+  subject     Subject        @relation(fields: [subjectId], references: [id], onDelete: Restrict)
+  chapterId   String?        // null = semester or full syllabus
+  chapter     Chapter?       @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  topicIds    String[]       // specific topic IDs
+
+  // Questions stored as [{questionId, orderIndex}] for bank questions
+  // or inline [{type, content, maxMarks}] for ad-hoc AI-generated
+  questions   Json
+
+  maxMarks    Int
+  dueDate     DateTime?
+  timeLimit   Int?           // minutes; null = untimed
+
+  isAIGenerated Boolean      @default(false)
+  targetGrade   String       @default("9")
+  targetBoard   String       @default("CBSE")
+
+  createdAt   DateTime       @default(now())
+  submissions Submission[]
+
+  @@index([subjectId])
+  @@index([chapterId])
+  @@index([targetGrade, targetBoard])
+  @@map("assignments")
+}
+
+// ============================================================
+// Submissions & AI Evaluation
+// ============================================================
+
+enum SubmissionStatus {
+  IN_PROGRESS
+  SUBMITTED
+  EVALUATED
+}
+
+model Submission {
+  id           String           @id @default(uuid())
+  userId       String
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignmentId String
+  assignment   Assignment       @relation(fields: [assignmentId], references: [id])
+
+  // JSON shape: [{questionId, userAnswer, isCorrect?, marksAwarded?, aiFeedback?, correction?, explanation?}]
+  answers      Json
+
+  totalScore      Int    @default(0)
+  maxMarks        Int
+  percentageScore Float  @default(0)
+
+  // AI-generated holistic feedback
+  aiFeedback      String?  @db.Text
+
+  status          SubmissionStatus @default(IN_PROGRESS)
+  evaluatedAt     DateTime?
+  submittedAt     DateTime         @default(now())
+  timeTaken       Int?             // seconds
+
+  @@index([userId, submittedAt])
+  @@index([userId, assignmentId])
+  @@map("submissions")
 }
 
 // ============================================================
@@ -211,20 +320,19 @@ model UserMastery {
   subtopicId         String
   subtopic           Subtopic  @relation(fields: [subtopicId], references: [id], onDelete: Cascade)
 
-  masteryScore       Float     @default(0)   // 0-100, IRT estimate
-  stability          Float     @default(0)   // days (forgetting curve)
-  retrievability     Float     @default(0)   // current probability of recall
+  masteryScore       Float     @default(0)   // 0-100
+  stability          Float     @default(0)   // forgetting curve stability (days)
+  retrievability     Float     @default(0)   // probability of recall right now
   lastPracticed      DateTime?
 
   totalAttempts      Int       @default(0)
   correctAttempts    Int       @default(0)
   consecutiveCorrect Int       @default(0)
 
-  // JSON shape: [{ type: string, count: number }]
+  // JSON: [{ type: string, count: number }]
   errorPatterns      Json?
 
-  // Personalized difficulty calibration (1-5)
-  difficultyCalibration Int    @default(1)
+  difficultyCalibration Int    @default(1)  // personalized 1-5
 
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -237,7 +345,7 @@ model UserMastery {
 }
 
 // ============================================================
-// Practice Sessions
+// Practice Sessions (Spaced Repetition / Adaptive)
 // ============================================================
 
 enum SessionType {
@@ -255,23 +363,23 @@ enum SessionStatus {
 }
 
 model PracticeSession {
-  id             String            @id @default(uuid())
+  id             String          @id @default(uuid())
   userId         String
-  user           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   type           SessionType
-  status         SessionStatus     @default(IN_PROGRESS)
+  status         SessionStatus   @default(IN_PROGRESS)
 
-  startTime      DateTime          @default(now())
+  startTime      DateTime        @default(now())
   endTime        DateTime?
-  targetDuration Int               // minutes
+  targetDuration Int             // minutes
 
-  interleaved    Boolean           @default(false)
-  topicId        String?           // for TOPIC_FOCUS sessions
+  interleaved    Boolean         @default(false)
+  topicId        String?         // for TOPIC_FOCUS
 
   sessionQuestions SessionQuestion[]
 
-  createdAt      DateTime          @default(now())
+  createdAt      DateTime        @default(now())
 
   @@index([userId, createdAt])
   @@index([userId, status])
@@ -279,22 +387,21 @@ model PracticeSession {
 }
 
 model SessionQuestion {
-  id          String           @id @default(uuid())
+  id          String          @id @default(uuid())
   sessionId   String
-  session     PracticeSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session     PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   questionId  String
-  question    Question         @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  question    Question        @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
   orderIndex  Int
 
-  // JSON: depends on QuestionType (string for MCQ, number for NUMERIC, etc.)
   userAnswer  Json?
   isCorrect   Boolean?
-  timeTaken   Int?             // seconds
-  confidence  Int?             // 1-5
-  hintsUsed   Int              @default(0)
-  tutorUsed   Boolean          @default(false)
+  timeTaken   Int?            // seconds
+  confidence  Int?            // 1-5
+  hintsUsed   Int             @default(0)
+  tutorUsed   Boolean         @default(false)
 
   submittedAt DateTime?
 
@@ -304,7 +411,89 @@ model SessionQuestion {
 }
 
 // ============================================================
-// Study Streak (Learning-Validated)
+// Study Materials (linked to Chapter or Topic)
+// ============================================================
+
+enum MaterialType {
+  VIDEO           // YouTube link
+  PDF             // Downloadable PDF
+  NOTES           // Text notes
+  WORKSHEET       // Practice worksheet
+  PLATFORM_CONTENT // AI-generated inline content
+}
+
+model StudyMaterial {
+  id          String       @id @default(uuid())
+  title       String
+  description String?
+
+  type        MaterialType @default(NOTES)
+
+  // Links
+  youtubeUrl   String?      // for VIDEO type
+  thumbnailUrl String?      // auto-fetched from YouTube oEmbed
+  fileUrl      String?      // for PDF/WORKSHEET
+  content      String?      @db.Text // for PLATFORM_CONTENT / NOTES inline
+
+  // Curriculum link (at least one required)
+  subjectId    String
+  subject      Subject      @relation(fields: [subjectId], references: [id])
+  chapterId    String?
+  chapter      Chapter?     @relation(fields: [chapterId], references: [id])
+  topicId      String?
+  topic        Topic?       @relation(fields: [topicId], references: [id])
+
+  // AI generation metadata
+  isAIGenerated Boolean     @default(false)
+  aiGeneratedAt DateTime?
+
+  isPublished   Boolean     @default(true)
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([subjectId])
+  @@index([chapterId])
+  @@index([topicId])
+  @@map("study_materials")
+}
+
+// ============================================================
+// Leaderboard & Ranking
+// ============================================================
+
+enum LeaderboardPeriod {
+  WEEKLY
+  MONTHLY
+  ALL_TIME
+}
+
+model LeaderboardEntry {
+  id           String            @id @default(uuid())
+  userId       String
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  period       String            // e.g., "2026-W18" or "2026-04" or "ALL"
+  periodType   LeaderboardPeriod
+
+  totalScore   Float             @default(0)  // avg percentage across submissions
+  submissionCount Int            @default(0)
+
+  // Ranks (null = not computed yet or user not opted-in)
+  overallRank  Int?
+  stateRank    Int?
+  districtRank Int?
+  schoolRank   Int?
+
+  updatedAt    DateTime          @updatedAt
+
+  @@unique([userId, period, periodType])
+  @@index([periodType, period, totalScore])
+  @@map("leaderboard_entries")
+}
+
+// ============================================================
+// Study Streak
 // ============================================================
 
 model StudyStreak {
@@ -334,6 +523,7 @@ enum NotificationType {
   SYSTEM
   MASTERY
   REMEDIATION
+  LEADERBOARD
 }
 
 model Notification {
@@ -355,169 +545,20 @@ model Notification {
 }
 
 // ============================================================
-// Content Aggregation (Deprioritized)
-// ============================================================
-
-model ContentSource {
-  id          String   @id @default(uuid())
-  name        String
-  url         String   @unique
-  type        String   // RSS, API, WEBSITE, YOUTUBE
-  subjectId   String?
-  subject     Subject? @relation(fields: [subjectId], references: [id])
-  config      Json?
-  isActive    Boolean  @default(true)
-  lastFetched DateTime?
-  items       ContentItem[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  @@map("content_sources")
-}
-
-model ContentItem {
-  id              String        @id @default(uuid())
-  sourceId        String
-  source          ContentSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  subjectId       String?
-  subject         Subject?      @relation(fields: [subjectId], references: [id])
-  title           String
-  description     String?
-  url             String        @unique
-  content         String?       @db.Text
-  type            String?       // VIDEO, ARTICLE, etc.
-  relevanceScore  Float         @default(0)
-  isApproved      Boolean       @default(false)
-  isAutoApproved  Boolean       @default(false)
-  rejectionReason String?
-  publishedAt     DateTime?
-  fetchedAt       DateTime      @default(now())
-  metadata        Json?
-  queue           ContentQueue?
-  curationLogs    ContentCurationLog[]
-  createdAt       DateTime      @default(now())
-
-  @@map("content_items")
-}
-
-model ContentQueue {
-  id            String      @id @default(uuid())
-  contentItemId String      @unique
-  contentItem   ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
-  status        String      @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
-  priority      Int         @default(0)
-  error         String?
-  processedAt   DateTime?
-  createdAt     DateTime    @default(now())
-
-  @@map("content_queue")
-}
-
-model ContentCurationLog {
-  id            String       @id @default(uuid())
-  action        String
-  contentItemId String?
-  contentItem   ContentItem? @relation(fields: [contentItemId], references: [id])
-  message       String
-  metadata      Json?
-  createdAt     DateTime     @default(now())
-
-  @@map("content_curation_logs")
-}
-
-model AgentRun {
-  id            String    @id @default(uuid())
-  status        String    // RUNNING, COMPLETED, FAILED
-  itemsFound    Int       @default(0)
-  itemsApproved Int       @default(0)
-  itemsRejected Int       @default(0)
-  error         String?
-  metadata      Json?
-  startedAt     DateTime  @default(now())
-  completedAt   DateTime?
-  createdAt     DateTime  @default(now())
-
-  @@map("agent_runs")
-}
-
-// ============================================================
-// Legacy Models (Read-Only — Preserve Historical Data)
-// ============================================================
-
-model SubjectLegacy {
-  id             String          @id @default(uuid())
-  name           String          @unique
-  color          String
-  icon           String?
-
-  @@map("subjects_legacy")
-}
-
-model Assignment {
-  id          String       @id @default(uuid())
-  title       String
-  description String
-  weekNumber  Int
-  subjectId   String
-  subject     Subject      @relation(fields: [subjectId], references: [id])
-  questions   Json
-  maxMarks    Int
-  dueDate     DateTime
-  timeLimit   Int?
-  createdAt   DateTime     @default(now())
-  submissions Submission[]
-
-  @@map("assignments")
-}
-
-model Submission {
-  id           String     @id @default(uuid())
-  userId       String
-  user         User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  assignmentId String
-  assignment   Assignment @relation(fields: [assignmentId], references: [id])
-  answers      Json
-  score        Int
-  maxMarks     Int
-  feedback     String?
-  status       String
-  submittedAt  DateTime   @default(now())
-  startedAt    DateTime?
-  timeTaken    Int?
-
-  @@map("submissions")
-}
-
-model StudyMaterial {
-  id          String   @id @default(uuid())
-  title       String
-  description String?
-  type        String
-  url         String?
-  subjectId   String
-  subject     Subject      @relation(fields: [subjectId], references: [id])
-  topic       String
-  bookmarked  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-
-  @@map("study_materials")
-}
-
-// ============================================================
 // Gamification: Badges & Challenges
 // ============================================================
 
 model WeeklyChallenge {
-  id          String    @id @default(uuid())
+  id          String   @id @default(uuid())
   title       String
   description String
-  target      Int       // e.g., 5 assignments
-  type        String    // ASSIGNMENTS_COMPLETED, PERFECT_SCORES, MINUTES_STUDIED
-  points      Int       @default(50)
+  target      Int      // e.g., complete 5 assignments
+  type        String   // ASSIGNMENTS_COMPLETED, PERFECT_SCORES, MINUTES_STUDIED
+  points      Int      @default(50)
   startDate   DateTime
   endDate     DateTime
-  isActive    Boolean   @default(true)
-  
+  isActive    Boolean  @default(true)
+
   userChallenges UserChallenge[]
 
   @@map("weekly_challenges")
@@ -542,23 +583,41 @@ model Badge {
   name        String     @unique
   description String
   icon        String
-  category    String     // FIRST_STEPS, CONSISTENCY, MASTERY, SPEED, SPECIAL
-  condition   String     // JSON string defining unlock condition
+  category    String     // FIRST_STEPS, CONSISTENCY, MASTERY, LEADERBOARD
+  condition   String   // JSON string defining unlock condition — parsed safely in gamification.ts
   points      Int        @default(10)
   createdAt   DateTime   @default(now())
+
   userBadges  UserBadge[]
 
   @@map("badges")
 }
 
 model UserBadge {
-  id        String   @id @default(uuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  badgeId   String
-  badge     Badge    @relation(fields: [badgeId], references: [id])
-  earnedAt  DateTime @default(now())
+  id       String   @id @default(uuid())
+  userId   String
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  badgeId  String
+  badge    Badge    @relation(fields: [badgeId], references: [id])
+  earnedAt DateTime @default(now())
 
   @@unique([userId, badgeId])
   @@map("user_badges")
+}
+
+// ============================================================
+// Background Tasks (Jobs Queue)
+// ============================================================
+
+model Task {
+  id          String   @id @default(uuid())
+  type        String   // "SEED_STUDY_MATERIAL" | "VERIFY_CURRICULUM"
+  status      String   @default("PENDING") // PENDING, PROCESSING, COMPLETED, FAILED
+  payload     Json?    // e.g., { topicId: "..." }
+  error       String?  @db.Text
+  progress    Float    @default(0) // 0-100
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("tasks")
 }

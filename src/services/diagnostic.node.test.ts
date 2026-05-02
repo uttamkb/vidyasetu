@@ -1,5 +1,3 @@
-import { describe, it } from "node:test";
-import assert from "node:assert/strict";
 import { buildDiagnosticPlan, estimateInitialMastery, type DiagnosticSubject } from "./diagnostic";
 
 const subjects: DiagnosticSubject[] = [
@@ -55,24 +53,24 @@ describe("diagnostic service", () => {
   it("builds an interleaved plan across subjects", () => {
     const plan = buildDiagnosticPlan(subjects, { targetQuestionCount: 4 });
 
-    assert.equal(plan.length, 4);
-    assert.deepEqual(plan.map((item) => item.subjectName), [
+    expect(plan.length).toBe(4);
+    expect(plan.map((item) => item.subjectName)).toEqual([
       "Mathematics",
       "Science",
       "Mathematics",
       "Science",
     ]);
-    assert.deepEqual(plan.map((item) => item.orderIndex), [0, 1, 2, 3]);
+    expect(plan.map((item) => item.orderIndex)).toEqual([0, 1, 2, 3]);
   });
 
   it("does not exceed available subtopics", () => {
     const plan = buildDiagnosticPlan(subjects, { targetQuestionCount: 25 });
-    assert.equal(plan.length, 4);
+    expect(plan.length).toBe(4);
   });
 
   it("returns an empty plan for empty curriculum", () => {
     const plan = buildDiagnosticPlan([], { targetQuestionCount: 25 });
-    assert.equal(plan.length, 0);
+    expect(plan.length).toBe(0);
   });
 
   it("estimates initial mastery conservatively", () => {
@@ -84,14 +82,14 @@ describe("diagnostic service", () => {
     const correct = estimates.find((estimate) => estimate.subtopicId === "math-sub-1");
     const incorrect = estimates.find((estimate) => estimate.subtopicId === "math-sub-2");
 
-    assert.ok(correct);
-    assert.ok(incorrect);
-    assert.equal(correct.masteryScore, 84);
-    assert.equal(correct.stability, 7);
-    assert.equal(correct.retrievability, 1);
-    assert.equal(incorrect.masteryScore, 18);
-    assert.equal(incorrect.stability, 1);
-    assert.equal(incorrect.retrievability, 0);
+    expect(correct).toBeTruthy();
+    expect(incorrect).toBeTruthy();
+    expect(correct!.masteryScore).toBe(84);
+    expect(correct!.stability).toBe(7);
+    expect(correct!.retrievability).toBe(1);
+    expect(incorrect!.masteryScore).toBe(18);
+    expect(incorrect!.stability).toBe(1);
+    expect(incorrect!.retrievability).toBe(0);
   });
 
   it("handles uneven subtopics in round-robin correctly", () => {
@@ -138,8 +136,8 @@ describe("diagnostic service", () => {
 
     const plan = buildDiagnosticPlan(unevenSubjects, { targetQuestionCount: 10 });
     // Should be: Math(1), Sci(1), Math(2), Math(3)
-    assert.equal(plan.length, 4);
-    assert.deepEqual(plan.map((p) => p.subjectName), ["Math", "Sci", "Math", "Math"]);
+    expect(plan.length).toBe(4);
+    expect(plan.map((p) => p.subjectName)).toEqual(["Math", "Sci", "Math", "Math"]);
   });
 
   it("calculates mastery score impact of confidence", () => {
@@ -151,8 +149,8 @@ describe("diagnostic service", () => {
     // Base correct is 20 + 1.0 * 60 = 80
     // High confidence: 80 + (5-3)*2 = 84
     // Low confidence: 80 + (1-3)*2 = 76
-    assert.equal(high[0].masteryScore, 84);
-    assert.equal(low[0].masteryScore, 76);
+    expect(high[0].masteryScore).toBe(84);
+    expect(low[0].masteryScore).toBe(76);
   });
 
   it("clamps targetQuestionCount to 1-100", () => {
@@ -160,7 +158,7 @@ describe("diagnostic service", () => {
     const smallPlan = buildDiagnosticPlan(subjects, { targetQuestionCount: 0 });
 
     // subjects has 4 subtopics total
-    assert.equal(largePlan.length, 4);
-    assert.equal(smallPlan.length, 1); // Clamp to min 1
+    expect(largePlan.length).toBe(4);
+    expect(smallPlan.length).toBe(1); // Clamp to min 1
   });
 });

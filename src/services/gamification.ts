@@ -45,14 +45,20 @@ export class GamificationService {
     // Base XP for events
     if (event.type === "SUBMISSION") {
       xpGained += 50; // Base 50 XP for submission
-      if (event.data?.score === event.data?.maxMarks) xpGained += 50; // Bonus for perfect score
+      if (event.data?.totalScore === event.data?.maxMarks) xpGained += 50; // Bonus for perfect score
     } else if (event.type === "SESSION_COMPLETED") {
       xpGained += 20; // XP for practice session
     }
 
     // Evaluate badges
     for (const badge of unearnedBadges) {
-      const condition = JSON.parse(badge.condition) as BadgeCondition;
+      let condition: BadgeCondition;
+      try {
+        condition = JSON.parse(badge.condition) as BadgeCondition;
+      } catch {
+        console.warn(`[gamification] Skipping badge "${badge.name}": invalid JSON in condition field.`);
+        continue;
+      }
       const earned = await this.evaluateCondition(condition, event, user.id);
       
       if (earned) {
@@ -102,7 +108,7 @@ export class GamificationService {
 
       case "perfect_score":
         if (event.type === "SUBMISSION" && event.data) {
-          return event.data.score === event.data.maxMarks;
+          return event.data.totalScore === event.data.maxMarks;
         }
         return false;
 
@@ -127,9 +133,9 @@ export class GamificationService {
             userId,
             assignment: { subject: { name: condition.subject } },
           },
-          select: { score: true, maxMarks: true }
+          select: { totalScore: true, maxMarks: true }
         });
-        const passedCount = highScoringSubmissions.filter(s => (s.score / s.maxMarks) * 100 >= condition.minScore).length;
+        const passedCount = highScoringSubmissions.filter(s => (s.totalScore / s.maxMarks) * 100 >= condition.minScore).length;
         return passedCount >= condition.count;
       }
 
