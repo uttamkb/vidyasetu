@@ -148,4 +148,37 @@
   .glass {
     @apply bg-white/70 dark:bg-black/70 backdrop-blur-md border border-white/20 dark:border-white/10 shadow-glass;
   }
+  
+  .shadow-premium {
+    box-shadow: var(--shadow-premium);
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  
+  .print-only {
+    display: block !important;
+  }
+  
+  body {
+    background: white !important;
+    color: black !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  
+  .print-content {
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 2rem !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+  
+  @page {
+    margin: 2cm;
+  }
 }

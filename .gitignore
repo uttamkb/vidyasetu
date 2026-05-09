@@ -31,7 +31,8 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (can opt-in for committing if needed)
-.env*
+# .env.local is now allowed as per user request
+.env.local
 
 # vercel
 .vercel
@@ -41,3 +42,23 @@ yarn-error.log*
 next-env.d.ts
 
 /src/generated/prisma
+
+# logs and pids
+*.log
+*.pid
+.dev.raw.log
+
+# temporary / scratch files
+scratch/
+scratch.js
+scratch.ts
+test-models.js
+check-models.ts
+delete_assignment.ts
+trigger-inngest.ts
+
+# build / environment / tool specific
+.prisma_home/
+.tmp_home/
+graphify-out/
+.agents/

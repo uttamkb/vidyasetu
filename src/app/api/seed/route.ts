@@ -8,13 +8,11 @@
  * the schema. This seed only creates Subjects + Assignments now.
  */
 import { prisma } from "@/lib/db";
+import { auth } from "@/lib/auth";
 import { toJson } from "@/lib/prisma-json";
 import { NextResponse } from "next/server";
 import type { MaterialType } from "@prisma/client";
 
-if (process.env.NODE_ENV === "production") {
-  throw new Error("Seed route must not be used in production.");
-}
 
 interface SubjectSeed {
   name: string;
@@ -88,6 +86,12 @@ function generateQuestions(subjectName: string, week: number): LegacyQuestion[] 
 }
 
 export async function POST() {
+  // Auth guard — only ADMIN users can trigger seeding
+  const session = await auth();
+  if (!session?.user || (session.user as any).role !== "ADMIN") {
+    return NextResponse.json({ error: "Unauthorized — ADMIN role required" }, { status: 403 });
+  }
+
   try {
     const createdSubjects: Array<{ id: string; name: string }> = [];
 

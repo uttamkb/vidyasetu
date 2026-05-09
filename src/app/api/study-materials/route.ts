@@ -65,6 +65,14 @@ export async function GET(req: NextRequest) {
       take: 100,
     });
 
+    // AUTO-HEALING: Clean up broken fallback AI notes
+    if (topicId && materials.some(m => m.type === "PLATFORM_CONTENT" && m.content?.includes("Study notes for ") && (m.content?.length || 0) < 300)) {
+      console.log(`[API] Auto-healing broken AI notes for topic ${topicId}`);
+      await prisma.studyMaterial.deleteMany({ where: { topicId } });
+      await prisma.question.deleteMany({ where: { source: "ai_generated", subtopic: { topicId } } });
+      materials = [];
+    }
+
     // JUST-IN-TIME (JIT) Content Generation
     // If a specific topic was requested but has no materials, autonomously generate them.
     if (topicId && materials.length === 0 && !type && !query) {

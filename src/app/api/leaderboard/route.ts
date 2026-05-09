@@ -68,7 +68,7 @@ export async function GET(req: NextRequest) {
       school: userInfoMap[entry.userId]?.school ?? null,
       district: userInfoMap[entry.userId]?.district ?? null,
       state: userInfoMap[entry.userId]?.state ?? null,
-      avgScore: Math.round(entry.totalScore * 10) / 10,
+      growthScore: Math.round(entry.totalScore),
       submissionCount: entry.submissionCount,
       isCurrentUser: entry.userId === session.user.id,
     }));
@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
           school: currentUser.school,
           district: currentUser.district,
           state: currentUser.state,
-          avgScore: Math.round(myEntry.totalScore * 10) / 10,
+          growthScore: Math.round(myEntry.totalScore),
           submissionCount: myEntry.submissionCount,
           isCurrentUser: true,
         };

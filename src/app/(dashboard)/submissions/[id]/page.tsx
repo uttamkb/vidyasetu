@@ -12,19 +12,16 @@ import { getRecommendations } from "@/services/recommendation-engine";
 import { RetryWeakTopicsButton } from "./retry-button";
 import { PrintButton } from "@/components/print-button";
 
-// Legacy question shape stored in Assignment.questions Json field
-interface LegacyQuestion {
-  question: string;
-  type: "MCQ" | "SHORT_ANSWER" | "LONG_ANSWER";
-  correctAnswer: string;
-  marks: number;
-  keywords?: string[];
-}
-
-// Legacy answer shape stored in Submission.answers Json field
-interface LegacyAnswer {
+// Evaluated answer shape stored in Submission.answers Json field
+interface EvaluatedAnswer {
   questionIndex: number;
-  answer: string;
+  userAnswer: string | number | null;
+  isCorrect: boolean;
+  marksAwarded: number;
+  maxMarks: number;
+  feedback: string;
+  correction: string;
+  explanation: string;
 }
 
 async function getSubmission(id: string, userId: string) {
@@ -53,8 +50,8 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
     notFound();
   }
 
-  const questions = submission.assignment.questions as unknown as LegacyQuestion[];
-  const answers = submission.answers as unknown as LegacyAnswer[];
+  const questions = submission.assignment.questions as any[];
+  const answers = submission.answers as unknown as EvaluatedAnswer[];
   const percentage = Math.round((submission.totalScore / submission.maxMarks) * 100);
 
   const getScoreColor = (pct: number) => {
@@ -127,31 +124,11 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
         <div className="space-y-4">
           {questions.map((question: any, index: number) => {
             const answer = answers.find((a: any) => a.questionIndex === index);
-            let score = 0;
-            if (answer) {
-              if (question.type === "MCQ") {
-                score = answer.answer.trim().toLowerCase() === question.correctAnswer.trim().toLowerCase()
-                  ? question.marks
-                  : 0;
-              } else {
-                // Approximate score from feedback or recalculate
-                const answerLower = answer.answer.toLowerCase();
-                const keywords = question.keywords || [];
-                const matched = keywords.filter((k: string) => answerLower.includes(k.toLowerCase()));
-                if (question.type === "SHORT_ANSWER") {
-                  score = Math.round((matched.length / keywords.length) * question.marks);
-                } else {
-                  const ratio = matched.length / keywords.length;
-                  if (ratio >= 0.8) score = question.marks;
-                  else if (ratio >= 0.5) score = Math.round(question.marks * 0.7);
-                  else if (ratio >= 0.3) score = Math.round(question.marks * 0.4);
-                  else score = Math.round(question.marks * 0.2);
-                }
-              }
-            }
+            const score = answer ? answer.marksAwarded : 0;
+            const maxMarks = question.marks || question.maxMarks || 1;
 
-            const isCorrect = score === question.marks;
-            const isPartial = score > 0 && score < question.marks;
+            const isCorrect = score === maxMarks;
+            const isPartial = score > 0 && score < maxMarks;
 
             return (
               <Card key={index}>
@@ -178,8 +155,8 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
                       ) : (
                         <XCircle className="h-5 w-5 text-red-500" />
                       )}
-                      <span className={`font-bold ${getScoreColor((score / question.marks) * 100)}`}>
-                        {score}/{question.marks}
+                      <span className={`font-bold ${getScoreColor((score / maxMarks) * 100)}`}>
+                        {score}/{maxMarks}
                       </span>
                     </div>
                   </div>
@@ -187,24 +164,25 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
                 <CardContent className="space-y-3">
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Your Answer:</p>
-                    <p className="text-sm mt-1">{answer?.answer || "Not answered"}</p>
+                    <p className="text-sm mt-1">{answer?.userAnswer ? String(answer.userAnswer) : "Not answered"}</p>
                   </div>
                   <Separator />
                   <div>
                     <p className="text-sm font-medium text-muted-foreground">Correct Answer:</p>
                     <p className="text-sm mt-1">{question.correctAnswer}</p>
                   </div>
-                  {question.keywords && question.keywords.length > 0 && (
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">Expected Keywords:</p>
-                      <div className="flex flex-wrap gap-2 mt-1">
-                        {question.keywords.map((keyword: string, i: number) => (
-                          <Badge key={i} variant="outline" className="text-xs">
-                            {keyword}
-                          </Badge>
-                        ))}
+                  {answer?.feedback && (
+                    <>
+                      <Separator />
+                      <div className="bg-muted/50 p-3 rounded-md">
+                        <p className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-primary" /> AI Evaluation:
+                        </p>
+                        <p className="text-sm">{answer.feedback}</p>
+                        {answer.correction && <p className="text-sm text-amber-600 mt-2">Correction: {answer.correction}</p>}
+                        {answer.explanation && <p className="text-sm text-blue-600 mt-2">Explanation: {answer.explanation}</p>}
                       </div>
-                    </div>
+                    </>
                   )}
                 </CardContent>
               </Card>

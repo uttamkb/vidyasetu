@@ -47,6 +47,7 @@ model Session {
 model User {
   id                  String    @id @default(uuid())
   email               String    @unique
+  emailVerified       DateTime? // Required by Auth.js v5 PrismaAdapter for OAuth
   name                String?
   image               String?
 
@@ -89,6 +90,7 @@ model User {
   notifications       Notification[]
   userChallenges      UserChallenge[]
   submissions         Submission[]
+  createdAssignments  Assignment[] @relation("AssignmentAuthor")
   userBadges          UserBadge[]
   leaderboardEntries  LeaderboardEntry[]
 
@@ -135,8 +137,9 @@ model Topic {
   id        String   @id @default(uuid())
   chapterId String
   chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  name      String
-  orderIndex Int     @default(0)
+  name        String
+  description String?
+  orderIndex  Int     @default(0)
 
   subtopics      Subtopic[]
   studyMaterials StudyMaterial[]
@@ -260,6 +263,8 @@ model Assignment {
   timeLimit   Int?           // minutes; null = untimed
 
   isAIGenerated Boolean      @default(false)
+  authorId      String?
+  author        User?          @relation("AssignmentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   targetGrade   String       @default("9")
   targetBoard   String       @default("CBSE")
 

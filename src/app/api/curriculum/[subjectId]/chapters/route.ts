@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { CurriculumResearcher } from "@/services/curriculum-researcher";
+import { inngest } from "@/inngest/client";
 
 // GET /api/curriculum/[subjectId]/chapters
 // Returns chapters + topics for a specific subject, with richer per-topic detail.
@@ -86,19 +87,18 @@ export async function GET(
         },
       });
       
-      // Push all newly generated topics to the background seeder queue
+      // Push all newly generated topics to the background seeder queue via Inngest
       if (subject) {
         const allTopics = subject.chapters.flatMap(c => c.topics);
-        for (const topic of allTopics) {
-          await prisma.task.create({
-            data: {
-              type: "SEED_TOPIC_CONTENT",
-              status: "PENDING",
-              payload: { topicId: topic.id },
-            }
-          });
+        const events = allTopics.map((topic) => ({
+          name: "app/topic.seed" as const,
+          data: { topicId: topic.id }
+        }));
+        
+        if (events.length > 0) {
+          await inngest.send(events);
+          console.log(`[API] Queued ${allTopics.length} topics for background seeding via Inngest.`);
         }
-        console.log(`[API] Queued ${allTopics.length} topics for background seeding.`);
       }
     }
 

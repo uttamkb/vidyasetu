@@ -21,6 +21,7 @@ src/
     db.ts                 # Prisma singleton
     auth.ts               # Auth.js config
     utils.ts              # cn() and helpers
+  proxy.ts                # Next.js Middleware (replaces middleware.ts)
   services/               # Business logic (no React)
     spaced-repetition.ts
     adaptive-difficulty.ts

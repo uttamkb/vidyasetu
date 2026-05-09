@@ -30,7 +30,7 @@ interface LeaderboardEntry {
   school: string | null;
   district: string | null;
   state: string | null;
-  avgScore: number;
+  growthScore: number;
   submissionCount: number;
   isCurrentUser: boolean;
 }
@@ -74,14 +74,10 @@ function RankBadge({ rank }: { rank: number }) {
 
 function ScoreBar({ score }: { score: number }) {
   return (
-    <div className="flex items-center gap-2">
-      <div className="h-1.5 rounded-full bg-muted flex-1 max-w-[80px] overflow-hidden">
-        <div
-          className="h-full rounded-full bg-primary transition-all"
-          style={{ width: `${score}%` }}
-        />
-      </div>
-      <span className="text-sm font-semibold tabular-nums">{score}%</span>
+    <div className="flex items-center justify-end">
+      <span className="text-base font-black text-primary tabular-nums tracking-tight">
+        {Math.round(score).toLocaleString()} <span className="text-muted-foreground font-bold text-xs ml-0.5">pts</span>
+      </span>
     </div>
   );
 }
@@ -129,30 +125,30 @@ export default function LeaderboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const fetchLeaderboardData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [lbRes, myRes] = await Promise.all([
+        fetch(`/api/leaderboard?period=${period}&scope=${scope}`),
+        fetch("/api/leaderboard/me"),
+      ]);
+
+      if (!lbRes.ok) throw new Error("Failed to load leaderboard");
+      const lbData = await lbRes.json();
+      const myData = myRes.ok ? await myRes.json() : null;
+
+      setEntries(lbData.leaderboard ?? []);
+      setMyRankData(myData);
+    } catch {
+      setError("Could not load leaderboard. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchLeaderboard = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [lbRes, myRes] = await Promise.all([
-          fetch(`/api/leaderboard?period=${period}&scope=${scope}`),
-          fetch("/api/leaderboard/me"),
-        ]);
-
-        if (!lbRes.ok) throw new Error("Failed to load leaderboard");
-        const lbData = await lbRes.json();
-        const myData = myRes.ok ? await myRes.json() : null;
-
-        setEntries(lbData.leaderboard ?? []);
-        setMyRankData(myData);
-      } catch {
-        setError("Could not load leaderboard. Please try again.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchLeaderboard();
+    fetchLeaderboardData();
   }, [period, scope]);
 
   // Derive "my rank" summary from myRankData
@@ -285,7 +281,7 @@ export default function LeaderboardPage() {
           ) : error ? (
             <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
               <p className="text-sm">{error}</p>
-              <Button size="sm" variant="outline" className="mt-3" onClick={fetchLeaderboard}>
+              <Button size="sm" variant="outline" className="mt-3" onClick={fetchLeaderboardData}>
                 Retry
               </Button>
             </div>
@@ -347,7 +343,7 @@ export default function LeaderboardPage() {
 
                   {/* Score */}
                   <div className="shrink-0 text-right min-w-[100px]">
-                    <ScoreBar score={entry.avgScore} />
+                    <ScoreBar score={entry.growthScore} />
                     <p className="text-xs text-muted-foreground mt-0.5">
                       {entry.submissionCount} test{entry.submissionCount !== 1 ? "s" : ""}
                     </p>

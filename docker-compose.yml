@@ -1,0 +1,28 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      - INNGEST_EVENT_KEY=local
+      - INNGEST_SIGNING_KEY=local
+      - NEXT_PUBLIC_INNGEST_URL=http://inngest:8288
+    depends_on:
+      inngest:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  inngest:
+    image: inngest/inngest:latest
+    ports:
+      - "8288:8288"
+    command: ["-u", "http://app:3000/api/inngest"]

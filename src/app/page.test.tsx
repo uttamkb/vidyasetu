@@ -15,7 +15,8 @@ describe("Home page", () => {
 
     render(<Home />);
 
-    expect(screen.getByText(/Your Learning Journey Starts Here/i)).toBeInTheDocument();
+    expect(screen.getByText(/Your Learning/i)).toBeInTheDocument();
+    expect(screen.getByText(/Journey Starts Here/i)).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /login/i })).toHaveLength(2);
     expect(screen.getByRole("link", { name: /go to dashboard/i })).toBeInTheDocument();
   });

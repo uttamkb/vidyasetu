@@ -25,11 +25,24 @@ async function getSubjectsForUser(userId: string) {
   return subjects;
 }
 
-export default async function StudyMaterialsPage() {
+import { connection } from "next/server";
+
+import { Suspense } from "react";
+
+async function StudyMaterialsContent() {
+  await connection();
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
   const subjects = await getSubjectsForUser(session.user.id);
 
   return <CurriculumBrowser subjects={subjects} />;
+}
+
+export default function StudyMaterialsPage() {
+  return (
+    <Suspense fallback={<div className="flex h-[50vh] items-center justify-center">Loading study materials...</div>}>
+      <StudyMaterialsContent />
+    </Suspense>
+  );
 }

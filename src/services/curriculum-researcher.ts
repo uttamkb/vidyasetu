@@ -1,14 +1,6 @@
-import { google } from "@google/generative-ai";
 import { prisma } from "@/lib/db";
 import { z } from "zod";
-
-// Ensure API key is available
-const apiKey = process.env.GEMINI_API_KEY;
-if (!apiKey) {
-  throw new Error("GEMINI_API_KEY environment variable not set.");
-}
-
-const genAI = new google.GenerativeAI(apiKey);
+import { geminiProModels, callGemini } from "@/lib/gemini";
 
 const curriculumSchema = z.object({
   chapters: z.array(
@@ -49,24 +41,37 @@ export class CurriculumResearcher {
       return subject.chapters;
     }
 
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+    const prompt = `You are an expert curriculum designer with deep knowledge of the CBSE (Central Board of Secondary Education) syllabus and NCERT textbooks published by the National Council of Educational Research and Training, India.
 
-    const prompt = `You are an expert curriculum designer for the CBSE (Central Board of Secondary Education) / NCERT syllabus in India.
-Your task is to generate the standard chapter and topic structure for:
+Your task is to generate the EXACT chapter and topic structure from the official NCERT textbook for:
+
 Grade: ${subject.grade}
 Subject: ${subject.name}
 Board: ${subject.board || "CBSE"}
+Syllabus Year: 2024-2025
 
-Create a highly accurate and comprehensive list of Chapters, and within each Chapter, the key Topics covered according to the latest syllabus.
+CRITICAL CONSTRAINTS:
+1. Use ONLY chapters and topics from the official NCERT textbook for this subject and grade.
+2. Chapter names MUST match the NCERT textbook table of contents exactly.
+3. Do NOT add any chapter or topic that is not in the NCERT textbook.
+4. Do NOT include content from other boards (ICSE, State Boards) or higher grades.
+5. Include ALL chapters from the textbook — do not skip any.
+
+NCERT Textbook Reference:
+- Mathematics Class 9: "Mathematics" (NCERT, 15 chapters)
+- Science Class 9: "Science" (NCERT, 15 chapters)
+- Social Science Class 9: "India and the Contemporary World - I" (History), "Contemporary India - I" (Geography), "Democratic Politics - I" (Civics), "Economics" (NCERT)
+- English Class 9: "Beehive" (Prose & Poetry), "Moments" (Supplementary Reader)
+- Hindi Class 9: "Kshitij" (Prose & Poetry), "Kritika" (Supplementary Reader)
 
 Return the result STRICTLY as a JSON object matching this schema:
 {
   "chapters": [
     {
-      "name": "Chapter Title",
-      "description": "Brief description of chapter",
+      "name": "Exact NCERT Chapter Title",
+      "description": "One-line description from NCERT syllabus",
       "topics": [
-        { "name": "Topic Title", "description": "Brief description of topic" }
+        { "name": "Key Topic Title", "description": "Brief description" }
       ]
     }
   ]
@@ -74,34 +79,41 @@ Return the result STRICTLY as a JSON object matching this schema:
 
 Ensure the output is pure JSON. Do not include markdown formatting or backticks.`;
 
+    const fallbackData = { chapters: [] };
+    
     try {
-      const result = await model.generateContent(prompt);
-      const text = result.response.text();
-      const cleanedText = text.replace(/```json/g, "").replace(/```/g, "").trim();
-      const parsedData = JSON.parse(cleanedText);
+      const validatedData = await callGemini(
+        geminiProModels,
+        prompt,
+        fallbackData,
+        curriculumSchema
+      );
 
-      const validatedData = curriculumSchema.parse(parsedData);
-
-      // Save to database
-      for (let i = 0; i < validatedData.chapters.length; i++) {
-        const chapterData = validatedData.chapters[i];
-        
-        await prisma.chapter.create({
-          data: {
-            subjectId: subject.id,
-            name: chapterData.name,
-            description: chapterData.description,
-            orderIndex: i + 1,
-            topics: {
-              create: chapterData.topics.map((topic, j) => ({
-                name: topic.name,
-                description: topic.description,
-                orderIndex: j + 1,
-              })),
-            },
-          },
-        });
+      if (validatedData.chapters.length === 0) {
+        throw new Error("Gemini returned empty chapters array after all retries.");
       }
+
+      // Save to database atomically — if any chapter fails, none are persisted.
+      // This prevents partial seeding that would make the idempotency check
+      // skip this subject forever (it checks subject.chapters.length > 0).
+      await prisma.$transaction(
+        validatedData.chapters.map((chapterData, i) =>
+          prisma.chapter.create({
+            data: {
+              subjectId: subject.id,
+              name: chapterData.name,
+              orderIndex: i + 1,
+              topics: {
+                create: chapterData.topics.map((topic, j) => ({
+                  name: topic.name,
+                  description: topic.description,
+                  orderIndex: j + 1,
+                })),
+              },
+            },
+          })
+        )
+      );
 
       console.log(`[CurriculumResearcher] Successfully generated curriculum for ${subject.name}`);
       

@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import {
@@ -92,8 +92,9 @@ export default function OnboardingPage() {
       });
 
       if (res.ok) {
-        router.push("/dashboard?onboarded=true");
-        router.refresh();
+        // Full page reload triggers the server component OnboardingGuard,
+        // which reads isOnboarded from the DATABASE and lets us through.
+        window.location.href = "/dashboard";
       } else {
         const data = await res.json();
         setError(data.error || "Something went wrong. Please try again.");

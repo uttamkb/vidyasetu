@@ -23,6 +23,10 @@ export async function GET(req: NextRequest) {
       where: {
         targetGrade: user.grade,
         targetBoard: user.board,
+        OR: [
+          { authorId: null, isAIGenerated: false },
+          { authorId: session.user.id }
+        ],
         ...(subjectId ? { subjectId } : {}),
         ...(type ? { type: type as never } : {}),
       },

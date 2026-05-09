@@ -48,7 +48,7 @@ export default function AssignmentForm({
       const parsedIndex = parseInt(index);
       const qPointer = fullQuestions[parsedIndex]?.pointer;
       return {
-        questionId: qPointer?.questionId || qPointer?.id,
+        questionId: qPointer?.questionId,
         questionIndex: parsedIndex,
         userAnswer: answer,
       };

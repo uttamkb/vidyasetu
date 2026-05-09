@@ -9,7 +9,7 @@
  */
 
 import { prisma } from "@/lib/db";
-import { geminiPro, geminiFlash, callGemini } from "@/lib/gemini";
+import { geminiProModels, geminiFlashModels, callGemini } from "@/lib/gemini";
 import { toJson } from "@/lib/prisma-json";
 
 // ─────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ export async function evaluateSubmission(submissionId: string) {
     where: { id: submissionId },
     include: {
       assignment: { include: { subject: true } },
-      user: true,
+      user: { include: { studyStreak: true } },
     },
   });
 
@@ -181,11 +181,22 @@ export async function evaluateSubmission(submissionId: string) {
     },
   });
 
-  // 6. Update UserMastery for each subtopic
-  await updateMastery(submission.userId, masteryUpdates);
+  // 6. Update UserMastery for each subtopic and get net gain
+  const netMasteryGained = await updateMasteryAndCalculateGain(submission.userId, masteryUpdates);
 
-  // 7. Update LeaderboardEntry
-  await updateLeaderboard(submission.userId, percentageScore);
+  // 7. Calculate Gamified Growth Score (Max 100 per submission)
+  const streak = submission.user.studyStreak?.currentStreak ?? 0;
+  const growthScore = calculateGrowthScore(
+    percentageScore,
+    streak,
+    netMasteryGained,
+    submission.assignment.difficulty,
+    submission.timeTaken,
+    submission.assignment.timeLimit
+  );
+
+  // 8. Update LeaderboardEntry (Cumulative Points)
+  await updateLeaderboard(submission.userId, growthScore);
 
   return {
     submissionId,
@@ -249,7 +260,7 @@ Marking guidelines:
     ];
   }
 
-  return await callGemini<AIEvalResult>(geminiPro, finalPrompt, {
+  return await callGemini<AIEvalResult>(geminiProModels, finalPrompt, {
     isCorrect: false,
     marksAwarded: 0,
     feedback: "Unable to evaluate this answer automatically. Please check manually.",
@@ -294,7 +305,7 @@ Return JSON: { "feedback": "your feedback paragraph here" }
 `;
 
   const result = await callGemini<{ feedback: string }>(
-    geminiFlash,
+    geminiFlashModels,
     prompt,
     { feedback: `You scored ${score}/${maxMarks}. Review the incorrect answers and practice those topics again.` }
   );
@@ -306,42 +317,94 @@ Return JSON: { "feedback": "your feedback paragraph here" }
 // Update UserMastery after evaluation
 // ─────────────────────────────────────────────────────────
 
-async function updateMastery(
+async function updateMasteryAndCalculateGain(
   userId: string,
   updates: { subtopicId: string; isCorrect: boolean }[]
-) {
+): Promise<number> {
+  let totalNetGain = 0;
+
   for (const { subtopicId, isCorrect } of updates) {
-    await prisma.userMastery.upsert({
-      where: { userId_subtopicId: { userId, subtopicId } },
-      create: {
-        userId,
-        subtopicId,
-        masteryScore: isCorrect ? 20 : 5,
-        totalAttempts: 1,
-        correctAttempts: isCorrect ? 1 : 0,
-        consecutiveCorrect: isCorrect ? 1 : 0,
-        lastPracticed: new Date(),
-        difficultyCalibration: 1,
-      },
-      update: {
-        totalAttempts: { increment: 1 },
-        correctAttempts: { increment: isCorrect ? 1 : 0 },
-        consecutiveCorrect: isCorrect ? { increment: 1 } : { set: 0 },
-        masteryScore: isCorrect
-          ? { increment: 5 }   // +5 for correct (capped at 100)
-          : { decrement: 3 },  // -3 for wrong (min 0)
-        lastPracticed: new Date(),
-        updatedAt: new Date(),
-      },
+    const existing = await prisma.userMastery.findUnique({
+      where: { userId_subtopicId: { userId, subtopicId } }
     });
+
+    if (!existing) {
+      const initialScore = isCorrect ? 20 : 5;
+      totalNetGain += initialScore;
+      await prisma.userMastery.create({
+        data: {
+          userId,
+          subtopicId,
+          masteryScore: initialScore,
+          totalAttempts: 1,
+          correctAttempts: isCorrect ? 1 : 0,
+          consecutiveCorrect: isCorrect ? 1 : 0,
+          lastPracticed: new Date(),
+          difficultyCalibration: 1,
+        }
+      });
+    } else {
+      const oldScore = existing.masteryScore;
+      const newScore = isCorrect ? Math.min(100, oldScore + 5) : Math.max(0, oldScore - 3);
+      
+      if (newScore > oldScore) {
+        totalNetGain += (newScore - oldScore);
+      }
+
+      await prisma.userMastery.update({
+        where: { id: existing.id },
+        data: {
+          totalAttempts: { increment: 1 },
+          correctAttempts: { increment: isCorrect ? 1 : 0 },
+          consecutiveCorrect: isCorrect ? { increment: 1 } : { set: 0 },
+          masteryScore: newScore,
+          lastPracticed: new Date(),
+          updatedAt: new Date(),
+        }
+      });
+    }
   }
+
+  return totalNetGain;
 }
 
 // ─────────────────────────────────────────────────────────
-// Update LeaderboardEntry after evaluation
+// Update LeaderboardEntry (Cumulative Growth Score)
 // ─────────────────────────────────────────────────────────
 
-async function updateLeaderboard(userId: string, percentageScore: number) {
+function calculateGrowthScore(
+  percentageScore: number,
+  streak: number,
+  netMasteryGained: number,
+  difficulty: string,
+  timeTaken: number | null,
+  timeLimit: number | null
+): number {
+  // 1. Consistency (25%) -> Cap at 14 days
+  const streakScore = Math.min(streak / 14, 1.0) * 25;
+
+  // 2. Mastery Improvement (30%) -> Cap at +15 points gained per submission
+  const masteryScore = Math.min(netMasteryGained / 15, 1.0) * 30;
+
+  // 3. Accuracy (20%)
+  const accuracyScore = (percentageScore / 100) * 20;
+
+  // 4. Difficulty Attempted (15%)
+  let diffMult = 0.6; // MIXED
+  if (difficulty === "HARD") diffMult = 1.0;
+  if (difficulty === "MEDIUM") diffMult = 0.7;
+  if (difficulty === "EASY") diffMult = 0.3;
+  const difficultyScore = diffMult * 15;
+
+  // 5. Study Time Quality (10%)
+  let timeScore = 5;
+  if (timeTaken && timeTaken > 30) timeScore = 10; // good faith effort > 30s
+
+  const totalGrowth = streakScore + masteryScore + accuracyScore + difficultyScore + timeScore;
+  return Math.round(totalGrowth);
+}
+
+async function updateLeaderboard(userId: string, growthScore: number) {
   // Check if user has opted into leaderboard
   const user = await prisma.user.findUnique({
     where: { id: userId },
@@ -365,14 +428,11 @@ async function updateLeaderboard(userId: string, percentageScore: number) {
         userId,
         period,
         periodType,
-        totalScore: percentageScore,
+        totalScore: growthScore, // Store initial cumulative score
         submissionCount: 1,
       },
       update: {
-        // Rolling average
-        totalScore: {
-          set: 0, // will be recalculated in background job; for now just store latest
-        },
+        totalScore: { increment: growthScore }, // Stack cumulative points!
         submissionCount: { increment: 1 },
         updatedAt: new Date(),
       },

@@ -83,7 +83,7 @@ auth.edge.ts     → MIDDLEWARE ENTRY POINT
   • Re-exports `auth` from authConfig only
   • No Prisma, no Node.js-only imports
 
-middleware.ts    → imports from auth.edge.ts ONLY
+proxy.ts         → acts as middleware, imports from auth.edge.ts ONLY
 ```
 
 **Correct JWT callback pattern:**
@@ -109,13 +109,13 @@ async jwt({ token, user, trigger, session }) {
 
 ### ✅ Google Gemini AI Integration
 
-- [ ] `gemini-1.5-flash` for speed-critical paths: hints, quick feedback, formatting
-- [ ] `gemini-1.5-pro` for quality-critical paths: subjective evaluation, content generation
+- [ ] `gemini-2.5-flash` for speed-critical paths: hints, quick feedback, formatting
+- [ ] `gemini-3.1-pro-preview` for quality-critical paths: subjective evaluation, content generation
 - [ ] All prompts are in `src/prompts/` — separated from business logic
 - [ ] User input is **never** directly string-interpolated into prompts without sanitization
 - [ ] All LLM JSON output parsed with `JSON.parse(text.trim())` inside try-catch
 - [ ] Cache key defined for repeatable prompts: `(topic, questionId, difficulty, hintLevel)`
-- [ ] Rate limit enforced: 30 AI requests/minute per user
+- [ ] Rate limit enforced: 30 AI requests/minute per user (in proxy.ts)
 
 **Correct Gemini client pattern:**
 ```typescript
@@ -132,8 +132,9 @@ export const gemini =
 
 if (process.env.NODE_ENV !== "production") globalForGemini.gemini = gemini;
 
-export const flashModel = gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
-export const proModel   = gemini.getGenerativeModel({ model: "gemini-1.5-pro" });
+// Exporting fallback cascade models
+export const flashModel = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
+export const proModel   = gemini.getGenerativeModel({ model: "gemini-3.1-pro-preview" });
 ```
 
 **Correct AI service pattern:**
@@ -266,7 +267,7 @@ src/
 |---------|-----------|-----|
 | `PrismaClientConstructorValidationError` | Prisma v7 Wasm requires adapter | Use `new PrismaNeon({ connectionString })` |
 | `DATABASE_URL` undefined at runtime | Turbopack bundles Prisma before env vars load | Add to `serverExternalPackages` in `next.config.ts` |
-| `PrismaClient` in middleware crashing Edge | Middleware is Edge Runtime — no Node.js binary engines | Import `auth.edge.ts` in middleware, never `auth.ts` |
+| `PrismaClient` in middleware crashing Edge | Middleware is Edge Runtime — no Node.js binary engines | Import `auth.edge.ts` in proxy.ts, never `auth.ts` |
 | `prisma generate` EPERM error | macOS sandbox blocks schema-engine writing to `~/.cache` | Run in user's terminal (not Antigravity terminal) |
 | Auth `CallbackRouteError` | JWT callback hits DB on every request, not just first sign-in | Only sync DB when `user` is populated (first sign-in) |
 | Google Fonts build failure | Sandbox blocks outbound network in `npm run build` | Only affects builds; dev server works fine |

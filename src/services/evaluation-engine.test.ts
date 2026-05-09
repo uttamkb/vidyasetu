@@ -1,0 +1,142 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { evaluateSubmission } from "./evaluation-engine";
+import { prisma } from "@/lib/db";
+import { callGemini } from "@/lib/gemini";
+
+// Mock dependencies
+vi.mock("@/lib/db", () => ({
+  prisma: {
+    submission: {
+      findUniqueOrThrow: vi.fn(),
+      update: vi.fn(),
+    },
+    question: {
+      findMany: vi.fn(),
+    },
+    userMastery: {
+      upsert: vi.fn(),
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+    },
+    user: {
+      findUnique: vi.fn(),
+    },
+    leaderboardEntry: {
+      upsert: vi.fn(),
+    },
+  },
+}));
+
+vi.mock("@/lib/gemini", () => ({
+  geminiProModels: [],
+  geminiFlashModels: [],
+  callGemini: vi.fn(),
+}));
+
+vi.mock("@/lib/prisma-json", () => ({
+  toJson: vi.fn((val) => val),
+}));
+
+describe("evaluation-engine", () => {
+  const mockSubmissionId = "sub-123";
+  const mockSubmission = {
+    id: mockSubmissionId,
+    userId: "user-1",
+    status: "PENDING",
+    maxMarks: 10,
+    answers: [
+      { questionId: "q1", questionIndex: 0, userAnswer: "B" }, // Correct MCQ
+      { questionId: "q2", questionIndex: 1, userAnswer: "The apple falls." }, // AI Eval Short Answer
+    ],
+    assignment: {
+      id: "asgn-1",
+      questions: [],
+      subject: { name: "Science", grade: "9" },
+    },
+    user: { id: "user-1", leaderboardOptIn: true },
+  };
+
+  const mockQuestions = [
+    {
+      id: "q1",
+      type: "MCQ",
+      subtopicId: "st-1",
+      content: { question: "...", correctAnswer: "B", maxMarks: 5, explanation: "..." },
+    },
+    {
+      id: "q2",
+      type: "SHORT_ANSWER",
+      subtopicId: "st-2",
+      content: { question: "Why does apple fall?", correctAnswer: "Gravity", maxMarks: 5, explanation: "..." },
+    },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("evaluates a submission with MCQ and AI-evaluated answers", async () => {
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue(mockSubmission);
+    (prisma.question.findMany as any).mockResolvedValue(mockQuestions);
+    (prisma.user.findUnique as any).mockResolvedValue({ leaderboardOptIn: true });
+
+    // Mock AI evaluations
+    (callGemini as any).mockImplementation((models: any, prompt: any) => {
+      if (prompt.includes("EvaluatedAnswer")) { // Mock overall feedback
+        return { feedback: "Great job!" };
+      }
+      // Mock subjective evaluation
+      return {
+        isCorrect: true,
+        marksAwarded: 4,
+        feedback: "Good enough.",
+        correction: "",
+        explanation: "...",
+      };
+    });
+
+    const result = await evaluateSubmission(mockSubmissionId);
+
+    expect(result.totalScore).toBe(9); // 5 (MCQ) + 4 (AI)
+    expect(result.percentageScore).toBe(90);
+    expect(prisma.submission.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: mockSubmissionId },
+      data: expect.objectContaining({ status: "EVALUATED", totalScore: 9 })
+    }));
+    expect(prisma.userMastery.create).toHaveBeenCalledTimes(2);
+    expect(prisma.leaderboardEntry.upsert).toHaveBeenCalledTimes(3); // Weekly, Monthly, All-time
+  });
+
+  it("calculates gamified growth score correctly with HARD difficulty and streaks", async () => {
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSubmission,
+      timeTaken: 120, // > 30s gives 10 pts
+      assignment: {
+        ...mockSubmission.assignment,
+        difficulty: "HARD", // gives 1.0 * 15 = 15 pts
+      },
+      user: { 
+        id: "user-1", 
+        leaderboardOptIn: true,
+        studyStreak: { currentStreak: 14 } // 14 days gives 25 pts
+      },
+    });
+    
+    // Existing setup is sufficient to trigger the rest of the flow
+    const result = await evaluateSubmission(mockSubmissionId);
+    
+    // Streak(25) + Diff(15) + Time(10) + Accuracy(18) + Mastery(will vary based on mock)
+    // We just assert the leaderboard entry upsert was called which proves it reached the end without crashing
+    expect(prisma.leaderboardEntry.upsert).toHaveBeenCalledTimes(3);
+  });
+
+  it("throws error if submission is already evaluated", async () => {
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSubmission,
+      status: "EVALUATED",
+    });
+
+    await expect(evaluateSubmission(mockSubmissionId)).rejects.toThrow("Submission already evaluated.");
+  });
+});

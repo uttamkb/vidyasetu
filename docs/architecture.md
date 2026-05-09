@@ -64,18 +64,21 @@ auth.ts  [NODE ONLY — never import in middleware]
   ├── Credentials: real authorize() with DB upsert
   └── JWT callback: DB sync on first sign-in only
   ↓
-auth.edge.ts  [MIDDLEWARE ONLY]
+auth.edge.ts  [EDGE ENTRY]
   └── re-exports auth() from authConfig (no Prisma)
+  ↓
+proxy.ts      [MIDDLEWARE]
+  └── Uses NextAuth v5 wrapper. Handles Route Protection & AI Rate Limiting.
 ```
 
-**Rule:** `middleware.ts` MUST only import from `auth.edge.ts`.
+**Rule:** `proxy.ts` is the project's middleware. It MUST only import from `auth.edge.ts`.
 
 ## Database Layer
 
 - **ORM:** Prisma v7 (Wasm-based — requires driver adapter)
 - **Adapter:** `PrismaNeon({ connectionString })` — NOT a bare Pool instance
 - **Host:** Neon PostgreSQL (serverless, connection pooler enabled)
-- **Migrations:** `npx prisma db push` for MVP; migrate dev for production
+- **Migrations:** Automated `npx prisma db push` during Cloud Build pipeline before deploy.
 - **Env:** `DATABASE_URL` must be set in `.env.local`
 
 ### Critical: `serverExternalPackages`
@@ -91,7 +94,7 @@ from bundling them (which causes `process.env.DATABASE_URL` to be undefined at r
 
 1. Student requests assignment → `POST /api/assignments/generate`
 2. `AssignmentEngine.generate(userId, options)` builds prompt with student profile
-3. Gemini Flash generates structured JSON assignment
+3. Gemini cascade (2.5-flash -> 2.0-flash-lite) generates structured JSON assignment
 4. Response parsed with Zod → stored in `Assignment` table
 5. Frontend renders assignment with question cards
 
@@ -99,7 +102,7 @@ from bundling them (which causes `process.env.DATABASE_URL` to be undefined at r
 
 1. Student submits answers → `POST /api/submissions`
 2. Objective questions → auto-graded immediately
-3. Subjective questions → `EvaluationEngine.evaluate()` calls Gemini Pro
+3. Subjective questions → `EvaluationEngine.evaluate()` calls Gemini cascade (2.5-pro -> 3.1-pro)
 4. Results stored in `Submission` with `aiFeedback` and `totalScore`
 5. `RecommendationEngine` updates topic mastery based on results
 
@@ -116,13 +119,13 @@ from bundling them (which causes `process.env.DATABASE_URL` to be undefined at r
 | Next.js 16 App Router | Server components, native streaming, Turbopack speed | Breaking changes from v14; requires `serverExternalPackages` for Prisma |
 | Neon PostgreSQL | Serverless scaling, HTTP connections (no TCP cold starts for Prisma Wasm) | Requires connection pooler URL for Prisma adapter |
 | Prisma v7 (Wasm) | Type-safe queries, auto-generated client | No binary engines; must use driver adapter; `prisma generate` needs write access to `~/.cache` |
-| Google Gemini | Free tier for MVP, `gemini-1.5-flash` is fast + cheap | Requires `@google/generative-ai` SDK |
+| Google Gemini | Free tier for MVP, Model cascade (2.5, 3.1) ensures reliability | Requires `@google/generative-ai` SDK |
 | Auth.js v5 | First-class Next.js support, Edge-compatible JWT | Three-file pattern required; PrismaAdapter for OAuth |
 | No tRPC/GraphQL | REST is sufficient; fewer abstractions | Manual type checking on API boundary |
 
 ## Scalability Considerations
 
-- **AI Costs**: Use `gemini-1.5-flash` for hints/feedback; `gemini-1.5-pro` only for evaluation
+- **AI Costs**: Use `gemini-2.5-flash` for hints/feedback; `gemini-2.5-pro` only for evaluation
 - **Caching**: Cache AI responses by `(topic, difficulty, questionId)` — target >60% cache hit
 - **Leaderboard**: Pre-aggregate scores on submission, not at read time
 - **DB Indexes**: All leaderboard and submission queries must use indexed columns
@@ -132,7 +135,7 @@ from bundling them (which causes `process.env.DATABASE_URL` to be undefined at r
 - Auth.js v5 with Google OAuth (primary) and demo Credentials (MVP testing only)
 - All `/api/*` routes validate session via `auth()` from `@/lib/auth`
 - AI prompts are parameterized; user content is never string-interpolated directly
-- Rate limit target: 30 AI requests/minute per user (implement in API middleware)
+- Rate limit enforced: 30 AI requests/minute per user (implemented in `proxy.ts` middleware)
 - `DATABASE_URL` is server-only — never prefixed with `NEXT_PUBLIC_`
 
 ## Known Environment Constraints

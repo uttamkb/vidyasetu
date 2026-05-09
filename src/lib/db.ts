@@ -19,13 +19,16 @@ const globalForPrisma = globalThis as unknown as {
 };
 
 function createPrismaClient(): PrismaClient {
-  const connectionString = process.env.DATABASE_URL;
+  const connectionString = process.env.DATABASE_URL || "postgresql://dummy:dummy@dummy/dummy";
 
-  if (!connectionString) {
-    throw new Error(
-      "[db] DATABASE_URL is not set.\n" +
-      "Make sure .env.local contains:\n" +
-      "  DATABASE_URL=postgresql://user:pass@host/db\n"
+  // During Next.js build phase, if DATABASE_URL is missing, we use a dummy string.
+  // We warn the user but proceed to allow the build to complete (if routes are dynamic).
+  if (!process.env.DATABASE_URL) {
+    const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build";
+    console.warn(
+      `[db] DATABASE_URL is not set. ${
+        isBuildPhase ? "Build phase detected." : "Runtime detected!"
+      } Using dummy connection string.`
     );
   }
 

@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Users, BookOpen, FileText, Activity } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { connection } from "next/server";
 
 async function getAdminStats() {
   const [studentCount, subjectCount, chapterCount, topicCount, materialCount] = await Promise.all([
@@ -21,6 +22,7 @@ async function getAdminStats() {
 }
 
 export default async function AdminDashboardPage() {
+  await connection();
   const stats = await getAdminStats();
 
   return (

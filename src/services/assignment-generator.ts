@@ -8,7 +8,7 @@
  */
 
 import { prisma } from "@/lib/db";
-import { geminiFlash, callGemini } from "@/lib/gemini";
+import { geminiFlashModels, callGemini } from "@/lib/gemini";
 import { toJson } from "@/lib/prisma-json";
 import { AssignmentType, BloomLevel, DifficultyLevel, QuestionType } from "@prisma/client";
 import { buildQuestionGenerationPrompt } from "@/prompts/question-generation";
@@ -198,6 +198,7 @@ export async function generateAssignment(input: GenerateAssignmentInput) {
       maxMarks,
       timeLimit: timeLimit ?? null,
       isAIGenerated: aiQCount > 0,
+      authorId: userId,
       targetGrade: subject.grade,
       targetBoard: subject.board,
     },
@@ -227,7 +228,7 @@ async function generateQuestionsWithAI(
   input: GenerateQuestionsInput
 ): Promise<AIGeneratedQuestion[]> {
   const prompt = buildQuestionGenerationPrompt(input);
-  return callGemini(geminiFlash, prompt, [], AIAssignmentOutputSchema);
+  return callGemini(geminiFlashModels, prompt, [], AIAssignmentOutputSchema);
 }
 
 // ─────────────────────────────────────────────────────────

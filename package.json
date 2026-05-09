@@ -28,6 +28,7 @@
     "cheerio": "^1.0.0-rc.12",
     "class-variance-authority": "^0.7.1",
     "date-fns": "^4.1.0",
+    "inngest": "^3.54.2",
     "lucide-react": "^1.14.0",
     "neon-new": "^0.14.0",
     "next": "^16.2.4",
@@ -59,15 +60,15 @@
     "@types/testing-library__react": "^10.2.0",
     "@vitejs/plugin-react": "^5.0.0",
     "@vitest/coverage-v8": "^4.1.5",
+    "babel-plugin-react-compiler": "latest",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "eslint-plugin-react-compiler": "latest",
     "jsdom": "^29.1.1",
     "rimraf": "^6.1.3",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^4.1.5",
-    "babel-plugin-react-compiler": "latest",
-    "eslint-plugin-react-compiler": "latest"
+    "vitest": "^4.1.5"
   },
   "overrides": {
     "serialize-javascript": "^6.0.2",

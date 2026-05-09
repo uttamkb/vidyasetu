@@ -5,7 +5,7 @@
  * `callGemini()` accepts an optional `schema` parameter for this purpose.
  *
  * Usage:
- *   const result = await callGemini(geminiFlash, prompt, [], AIAssignmentOutputSchema);
+ *   const result = await callGemini(geminiFlashModels, prompt, [], AIAssignmentOutputSchema);
  */
 import { z } from "zod";
 

@@ -23,6 +23,9 @@ import {
   Sparkles,
   ArrowLeft,
   Loader2,
+  Printer,
+  PrinterIcon,
+  X,
 } from "lucide-react";
 import { extractYouTubeId, youTubeThumbnailUrl } from "@/lib/youtube";
 
@@ -138,18 +141,20 @@ function MaterialCard({ material, onReadInline }: {
       : null);
 
   return (
-    <Card className="group hover:shadow-md transition-shadow border-border/60">
+    <Card className="group hover:shadow-premium transition-all duration-300 border-border/50 hover:-translate-y-1 bg-card/50 backdrop-blur-sm overflow-hidden">
       {/* YouTube thumbnail */}
       {material.type === "VIDEO" && thumbnailSrc && (
-        <div className="relative overflow-hidden rounded-t-lg aspect-video bg-muted">
+        <div className="relative overflow-hidden aspect-video bg-muted border-b border-border/50">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={thumbnailSrc}
             alt={material.title}
-            className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
+            className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-500"
           />
-          <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Play className="h-10 w-10 text-white drop-shadow" />
+          <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+            <div className="p-3 rounded-full bg-white/20 backdrop-blur-md border border-white/30">
+              <Play className="h-6 w-6 text-white fill-white" />
+            </div>
           </div>
         </div>
       )}
@@ -157,64 +162,59 @@ function MaterialCard({ material, onReadInline }: {
       <CardHeader className="pb-2 pt-4">
         <div className="flex items-start justify-between gap-2">
           <span
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ${meta.color}`}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${meta.color}`}
           >
             {meta.icon}
             {meta.label}
           </span>
           {material.isAIGenerated && (
-            <Badge variant="outline" className="text-xs border-amber-400/40 text-amber-600">
-              <Sparkles className="h-3 w-3 mr-1" />
+            <div className="flex items-center gap-1 text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-1 rounded-full border border-amber-500/20">
+              <Sparkles className="h-3 w-3" />
               AI
-            </Badge>
+            </div>
           )}
         </div>
-        <CardTitle className="text-sm mt-2 leading-snug">{material.title}</CardTitle>
+        <CardTitle className="text-sm mt-3 font-heading font-bold leading-snug group-hover:text-primary transition-colors">
+          {material.title}
+        </CardTitle>
         {material.description && (
-          <CardDescription className="text-xs line-clamp-2">{material.description}</CardDescription>
+          <CardDescription className="text-xs line-clamp-2 mt-1">{material.description}</CardDescription>
         )}
       </CardHeader>
 
-      <CardContent className="pt-0">
+      <CardContent className="pt-2 pb-4">
         {/* Actions */}
         <div className="flex gap-2 mt-2">
           {material.type === "VIDEO" && material.youtubeUrl && (
             <a href={material.youtubeUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
-              <Button size="sm" className="w-full gap-1.5">
+              <Button size="sm" className="w-full gap-1.5 font-bold shadow-sm">
                 <Play className="h-3.5 w-3.5" /> Watch
               </Button>
             </a>
           )}
           {material.type === "PDF" && material.fileUrl && (
             <a href={material.fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
-              <Button size="sm" variant="outline" className="w-full gap-1.5">
-                <FileDown className="h-3.5 w-3.5" /> Download PDF
+              <Button size="sm" variant="outline" className="w-full gap-1.5 font-bold border-border/50">
+                <FileDown className="h-3.5 w-3.5" /> PDF
               </Button>
             </a>
           )}
           {material.type === "WORKSHEET" && material.fileUrl && (
             <a href={material.fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
-              <Button size="sm" variant="outline" className="w-full gap-1.5">
-                <FileDown className="h-3.5 w-3.5" /> Download
+              <Button size="sm" variant="outline" className="w-full gap-1.5 font-bold border-border/50">
+                <Dumbbell className="h-3.5 w-3.5" /> Practice
               </Button>
             </a>
           )}
           {(material.type === "NOTES" || material.type === "PLATFORM_CONTENT") && material.content && (
             <Button
               size="sm"
-              variant="outline"
-              className="flex-1 gap-1.5"
+              variant="secondary"
+              className="flex-1 gap-1.5 font-bold bg-primary/5 text-primary hover:bg-primary/10 border border-primary/10"
               onClick={() => onReadInline(material)}
             >
-              <BookMarked className="h-3.5 w-3.5" /> Read Notes
+              <BookOpen className="h-3.5 w-3.5" /> Read Notes
             </Button>
-          )}
-          {material.type === "NOTES" && !material.content && material.fileUrl && (
-            <a href={material.fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
-              <Button size="sm" variant="outline" className="w-full gap-1.5">
-                <ExternalLink className="h-3.5 w-3.5" /> Open
-              </Button>
-            </a>
           )}
         </div>
       </CardContent>
@@ -223,33 +223,138 @@ function MaterialCard({ material, onReadInline }: {
 }
 
 // ─────────────────────────────────────────
+// Simple Markdown Renderer (Internal)
+// ─────────────────────────────────────────
+function SimpleMarkdown({ content }: { content: string }) {
+  const lines = content.split("\n");
+  const rendered = [];
+
+  const formatText = (text: string) => {
+    return text
+      .replace(/\*\*(.*?)\*\*/g, '<strong class="text-[#1d1d1f] dark:text-white font-black">$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em class="text-primary font-medium italic">$1</em>');
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) {
+      rendered.push(<div key={`gap-${i}`} className="h-3 print:h-2" />);
+      continue;
+    }
+
+    if (line.startsWith("## ")) {
+      rendered.push(
+        <h2 key={i} className="text-2xl font-heading font-black mt-10 mb-5 text-[#1d1d1f] dark:text-white border-b border-slate-200/50 dark:border-slate-800 pb-2 print:break-after-avoid">
+          {line.replace("## ", "")}
+        </h2>
+      );
+    } else if (line.startsWith("### ")) {
+      rendered.push(
+        <h3 key={i} className="text-lg font-heading font-bold mt-8 mb-4 text-primary flex items-center gap-2 print:break-after-avoid">
+          <div className="w-2 h-2 rounded-full bg-primary print:hidden" />
+          {line.replace("### ", "")}
+        </h3>
+      );
+    } else if (line.startsWith("* **")) {
+      const match = line.match(/\* \*\*(.*?)\*\*: (.*)/);
+      if (match) {
+        rendered.push(
+          <div key={i} className="mb-4 pl-4 border-l-[3px] border-primary/40 py-1 bg-primary/5 rounded-r-md print:break-inside-avoid print:bg-transparent print:border-black/20">
+            <span className="font-bold text-[#1d1d1f] dark:text-white block md:inline">{match[1]}:</span>
+            <span className="ml-0 md:ml-2 text-[#1d1d1f]/90 dark:text-slate-200 font-medium">{match[2]}</span>
+          </div>
+        );
+      } else {
+        rendered.push(<p key={i} className="mb-4 text-[#1d1d1f]/90 dark:text-slate-200 text-base leading-relaxed font-medium print:break-inside-avoid">{line}</p>);
+      }
+    } else if (line.startsWith("* ") || line.startsWith("- ")) {
+      rendered.push(
+        <li 
+          key={i} 
+          className="ml-6 mb-3 list-disc text-[#1d1d1f]/90 dark:text-slate-200 text-base leading-relaxed font-medium marker:text-primary print:break-inside-avoid print:marker:text-black/50"
+          dangerouslySetInnerHTML={{ __html: formatText(line.replace(/^[* -] /, "")) }}
+        />
+      );
+    } else if (/^\d+\./.test(line)) {
+      rendered.push(
+        <p 
+          key={i} 
+          className="ml-2 mb-4 text-[#1d1d1f]/90 dark:text-slate-200 text-base leading-relaxed font-medium print:break-inside-avoid"
+          dangerouslySetInnerHTML={{ __html: formatText(line) }}
+        />
+      );
+    } else {
+      rendered.push(
+        <p 
+          key={i} 
+          className="mb-4 text-[#1d1d1f]/90 dark:text-slate-200 text-base leading-relaxed font-medium print:break-inside-avoid"
+          dangerouslySetInnerHTML={{ __html: formatText(line) }}
+        />
+      );
+    }
+  }
+
+  return <div className="academic-notes">{rendered}</div>;
+}
+
+// ─────────────────────────────────────────
 // Inline Notes Reader Modal
 // ─────────────────────────────────────────
 function NotesReader({ material, onClose }: { material: StudyMaterial; onClose: () => void }) {
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
-    <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-start justify-center p-4 overflow-auto">
-      <div className="bg-card border rounded-xl shadow-xl w-full max-w-2xl mt-8">
-        <div className="flex items-center justify-between px-6 py-4 border-b">
-          <div>
-            <h2 className="font-bold text-lg">{material.title}</h2>
-            {material.topic && (
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {material.topic.name}
-              </p>
+    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-start justify-center p-4 overflow-auto print:relative print:block print:overflow-visible print:bg-transparent print:backdrop-blur-none print:p-0">
+      <Card className="bg-[#fdfcf8] dark:bg-slate-950 border-slate-200/50 dark:border-slate-800 shadow-[0_8px_30px_rgb(0,0,0,0.08)] w-full max-w-3xl mt-8 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-300 overflow-hidden print:bg-white print:border-none print:shadow-none print:m-0 print:max-w-none print:overflow-visible">
+        <div className="sticky top-0 z-10 bg-[#fdfcf8]/90 dark:bg-slate-950/90 backdrop-blur-md px-6 py-4 border-b border-slate-200/50 dark:border-slate-800 flex items-center justify-between no-print">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-lg bg-primary/10">
+              <BookMarked className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h2 className="font-heading font-bold text-lg leading-none">{material.title}</h2>
+              {material.topic && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  {material.topic.name} • {material.subject.name}
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handlePrint} className="hidden sm:flex gap-2">
+              <Printer className="h-4 w-4" /> Print
+            </Button>
+            <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-muted">
+              <X className="h-5 w-5" />
+            </Button>
+          </div>
+        </div>
+        
+        <div className="px-8 py-8 print-content">
+          {/* Header for print only */}
+          <div className="hidden print-only mb-8 border-b-2 border-black pb-4">
+            <h1 className="text-3xl font-bold">{material.title}</h1>
+            <p className="text-sm mt-2">
+              Subject: {material.subject.name} | Topic: {material.topic?.name}
+            </p>
+            <p className="text-xs text-gray-500 mt-1 italic">Generated by VidyaSetu AI Assistant</p>
+          </div>
+
+          <div className="max-w-none">
+            {material.content ? (
+              <SimpleMarkdown content={material.content} />
+            ) : (
+              <p className="text-muted-foreground italic">No content available for this material.</p>
             )}
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose}>
-            <ArrowLeft className="h-4 w-4 mr-1" /> Close
-          </Button>
-        </div>
-        <ScrollArea className="max-h-[70vh]">
-          <div className="px-6 py-5 prose prose-sm dark:prose-invert max-w-none">
-            <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground">
-              {material.content}
-            </pre>
+          
+          <div className="mt-12 pt-6 border-t border-dashed text-center hidden print-only">
+            <p className="text-xs text-gray-400">© VidyaSetu — Empowering Academic Excellence</p>
           </div>
-        </ScrollArea>
-      </div>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -295,7 +400,7 @@ function TopicDetailPanel({
   return (
     <>
       {inlineNote && <NotesReader material={inlineNote} onClose={() => setInlineNote(null)} />}
-      <div className="space-y-4">
+      <div className="space-y-4 print:hidden">
         {/* Header */}
         <div className="flex items-center gap-3">
           <Button variant="ghost" size="sm" onClick={onBack} className="shrink-0">
@@ -504,7 +609,7 @@ export function CurriculumBrowser({ subjects }: CurriculumBrowserProps) {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div>
+      <div className="print:hidden">
         <h1 className="text-3xl font-bold tracking-tight">Study Materials</h1>
         <p className="text-muted-foreground mt-1">
           Browse the CBSE curriculum tree and access videos, notes, and worksheets per topic.
@@ -512,15 +617,15 @@ export function CurriculumBrowser({ subjects }: CurriculumBrowserProps) {
       </div>
 
       {/* Subject tabs */}
-      <div className="flex gap-2 flex-wrap">
+      <div className="flex gap-2 flex-wrap print:hidden">
         {subjects.map((subject) => (
           <button
             key={subject.id}
             onClick={() => setActiveSubjectId(subject.id)}
-            className={`px-4 py-1.5 rounded-full text-sm font-medium border transition-colors ${
+            className={`px-6 py-2 rounded-full text-sm font-bold border transition-all duration-300 ${
               activeSubjectId === subject.id
-                ? "bg-primary text-primary-foreground border-primary"
-                : "bg-transparent border-border hover:bg-accent"
+                ? "bg-primary text-primary-foreground border-primary shadow-premium scale-105"
+                : "bg-card border-border/50 hover:bg-accent text-muted-foreground"
             }`}
           >
             {subject.name}
@@ -529,47 +634,56 @@ export function CurriculumBrowser({ subjects }: CurriculumBrowserProps) {
       </div>
 
       {/* Main two-column layout */}
-      <div className="grid lg:grid-cols-[280px_1fr] gap-4 items-start">
+      <div className="grid lg:grid-cols-[300px_1fr] gap-6 items-start print:block">
         {/* Sidebar */}
-        <Card className="sticky top-20">
+        <Card className="sticky top-24 border-border/50 shadow-premium overflow-hidden print:hidden">
+          <div className="h-1 w-full bg-primary/20" />
           <CardHeader className="pb-2 pt-4">
-            <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-              {activeSubject?.name} Chapters
+            <CardTitle className="text-xs font-heading font-black text-primary uppercase tracking-widest flex items-center gap-2">
+              <BookOpen className="h-3.5 w-3.5" />
+              {activeSubject?.name} Curriculum
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0 pb-4">
             {loadingChapters ? (
-              <div className="flex items-center justify-center h-24">
-                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <div className="flex flex-col items-center justify-center py-12 gap-3">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <p className="text-xs text-muted-foreground animate-pulse">Loading structure...</p>
               </div>
             ) : chapters.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">No chapters found.</p>
+              <div className="py-12 text-center">
+                <p className="text-sm text-muted-foreground italic px-4">No chapters found for this subject.</p>
+              </div>
             ) : (
-              <ScrollArea className="max-h-[60vh]">
+              <div className="max-h-[calc(100vh-250px)] overflow-y-auto pr-2 pb-4 scrollbar-thin">
                 <ChapterTree
                   chapters={chapters}
                   selectedTopicId={selectedTopic?.id ?? null}
                   onTopicSelect={setSelectedTopic}
                 />
-              </ScrollArea>
+              </div>
             )}
           </CardContent>
         </Card>
 
         {/* Main content */}
-        <div>
+        <div className="min-h-[500px] print:min-h-0">
           {selectedTopic ? (
-            <TopicDetailPanel
-              topic={selectedTopic}
-              subjectId={activeSubjectId}
-              onBack={() => setSelectedTopic(null)}
-            />
+            <div className="animate-in fade-in slide-in-from-right-4 duration-500">
+              <TopicDetailPanel
+                topic={selectedTopic}
+                subjectId={activeSubjectId}
+                onBack={() => setSelectedTopic(null)}
+              />
+            </div>
           ) : (
-            <Card className="flex flex-col items-center justify-center py-20 text-center border-dashed">
-              <BookOpen className="h-12 w-12 mb-4 text-muted-foreground/40" />
-              <p className="font-medium text-muted-foreground">Select a topic from the sidebar</p>
-              <p className="text-sm text-muted-foreground/70 mt-1 max-w-xs">
-                Click on any chapter to expand it, then select a topic to see its study materials.
+            <Card className="flex flex-col items-center justify-center py-32 text-center border-dashed bg-muted/20 border-muted-foreground/20 print:hidden">
+              <div className="p-4 rounded-full bg-primary/5 mb-4">
+                <Sparkles className="h-10 w-10 text-primary/40" />
+              </div>
+              <p className="font-heading font-bold text-lg text-muted-foreground">Ready to start studying?</p>
+              <p className="text-sm text-muted-foreground/60 mt-2 max-w-xs px-4">
+                Select a topic from the sidebar to view detailed AI-curated notes, videos, and practice materials.
               </p>
             </Card>
           )}
