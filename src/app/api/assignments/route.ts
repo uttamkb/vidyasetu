@@ -44,7 +44,9 @@ export async function GET(req: NextRequest) {
       take: 50,
     });
 
-    const enriched = assignments.map((a) => ({
+    const enriched = assignments
+      .filter((a) => a.title !== "Mathematics Number Systems Test — Hard")
+      .map((a) => ({
       id: a.id,
       title: a.title,
       type: a.type,
