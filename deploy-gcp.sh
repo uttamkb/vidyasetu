@@ -71,8 +71,7 @@ done
 
 # 6. Run Database Migrations (via Cloud Build)
 echo -e "${BLUE}Running Prisma Migrations...${NC}"
-# We use a one-off Cloud Build to run migrations against the DB
-gcloud builds submit --config - . <<EOF
+cat > migration.yaml <<EOF
 steps:
 - name: 'node:20-slim'
   entrypoint: 'sh'
@@ -81,13 +80,16 @@ steps:
   - |
     apt-get update && apt-get install -y openssl
     npm ci
-    npx prisma migrate deploy
+    npx prisma db push --accept-data-loss
   secretEnv: ['DATABASE_URL']
 availableSecrets:
   secretManager:
   - versionName: projects/${PROJECT_ID}/secrets/DATABASE_URL/versions/latest
     env: 'DATABASE_URL'
 EOF
+
+gcloud builds submit --config migration.yaml .
+rm migration.yaml
 
 # 7. Build and Push Application Image
 echo -e "${BLUE}Building and pushing image to Artifact Registry...${NC}"
