@@ -11,7 +11,6 @@ const nextConfig: NextConfig = {
     "@prisma/adapter-neon",
   ],
   reactCompiler: true,
-  cacheComponents: true,
   experimental: {
     // Other experimental features if needed
   },
