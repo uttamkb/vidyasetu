@@ -1,0 +1,80 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  PROJECT_ID: vidyasetu-495001
+  REGION: us-east1
+  REPO_NAME: vidyasetu-repo
+  IMAGE_NAME: vidyasetu-app
+  SERVICE_NAME: vidyasetu-service
+
+jobs:
+  deploy:
+    name: Build, Migrate and Deploy
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 1. Authentication
+      - name: Google Auth
+        id: auth
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+      - name: Set up Cloud SDK
+        uses: 'google-github-actions/setup-gcloud@v2'
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev
+
+      # 2. Build and Push to GCP Artifact Registry
+      - name: Build and Push Container
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          build-args: |
+            NEXT_PHASE=phase-production-build
+
+      # 3. Database Migration
+      - name: Run Prisma Migrations
+        run: |
+          npm ci
+          npx prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+
+      # 4. Deploy to Cloud Run
+      - name: Deploy to Cloud Run
+        id: deploy
+        uses: 'google-github-actions/deploy-cloudrun@v2'
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          flags: |
+            --allow-unauthenticated
+            --service-account=vidyasetu-runner@${{ env.PROJECT_ID }}.iam.gserviceaccount.com
+            --memory=1Gi
+            --cpu=1
+            --max-instances=10
+            --set-secrets=DATABASE_URL=DATABASE_URL:latest,AUTH_SECRET=AUTH_SECRET:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,AUTH_GOOGLE_ID=AUTH_GOOGLE_ID:latest,AUTH_GOOGLE_SECRET=AUTH_GOOGLE_SECRET:latest
+
+      # 5. Output the URL
+      - name: Show URL
+        run: echo "App is live at ${{ steps.deploy.outputs.url }}"
