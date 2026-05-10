@@ -6,14 +6,16 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint",
+    "lint": "next lint",
     "seed": "tsx prisma/seed.ts",
     "seed:content-sources": "tsx src/scripts/seed-content-sources.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "clean:build": "npm run clean && npx prisma generate && next build && next start",
-    "clean": "npx rimraf .next"
+    "clean": "npx rimraf .next",
+    "typecheck": "tsc --noEmit",
+    "validate": "npm run typecheck && npm run lint"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.2",

@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
+import { Suspense } from "react";
 import {
   BookOpen,
   LayoutDashboard,
@@ -24,7 +25,7 @@ const navItems = [
   { title: "Settings", href: "/admin/settings", icon: Settings },
 ];
 
-export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+async function AdminShell({ children }: { children: React.ReactNode }) {
   await connection();
   const session = await auth();
 
@@ -73,5 +74,13 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">{children}</div>
       </main>
     </div>
+  );
+}
+
+export default function AdminLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<div className="flex h-screen items-center justify-center">Loading Admin Panel...</div>}>
+      <AdminShell>{children}</AdminShell>
+    </Suspense>
   );
 }
