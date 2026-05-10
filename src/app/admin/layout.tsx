@@ -1,4 +1,5 @@
 import { auth } from "@/lib/auth";
+import { connection } from "next/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
@@ -24,6 +25,7 @@ const navItems = [
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
+  await connection();
   const session = await auth();
 
   // Redundant check in case middleware misses it

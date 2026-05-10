@@ -15,6 +15,13 @@ NC='\033[0m'
 
 echo -e "${BLUE}Uploading secrets to Project: ${PROJECT_ID}${NC}"
 
+# Check if gcloud is installed
+if ! command -v gcloud &> /dev/null; then
+    echo -e "\033[0;31mError: gcloud is not installed or not in PATH.\033[0m"
+    echo -e "Please install the Google Cloud CLI: https://cloud.google.com/sdk/docs/install"
+    exit 1
+fi
+
 function create_secret() {
     local name=$1
     local value=$2
