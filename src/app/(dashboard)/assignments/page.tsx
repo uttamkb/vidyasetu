@@ -23,6 +23,7 @@ interface AssignmentListItem {
   status: AssignmentStatus;
   totalScore: number | null;
   percentageScore: number | null;
+  submissionId: string | null;
 }
 
 async function getAssignments(userId: string): Promise<AssignmentListItem[]> {
@@ -31,7 +32,7 @@ async function getAssignments(userId: string): Promise<AssignmentListItem[]> {
       subject: true,
       submissions: {
         where: { userId },
-        select: { status: true, totalScore: true, percentageScore: true },
+        select: { id: true, status: true, totalScore: true, percentageScore: true },
       },
     },
     orderBy: { createdAt: "desc" },
@@ -55,6 +56,7 @@ async function getAssignments(userId: string): Promise<AssignmentListItem[]> {
       status,
       totalScore: submission?.totalScore ?? null,
       percentageScore: submission?.percentageScore ?? null,
+      submissionId: submission?.id ?? null,
     };
   });
 }
@@ -226,7 +228,7 @@ function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
 
         {/* CTA */}
         <div className="mt-4 pt-4 border-t">
-          <Link href={isDone ? `/submissions/${a.id}` : `/assignments/${a.id}`}>
+          <Link href={isDone ? `/submissions/${a.submissionId}` : `/assignments/${a.id}`}>
             <Button
               className="w-full gap-2"
               variant={isDone ? "outline" : "default"}
