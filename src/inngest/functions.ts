@@ -1,7 +1,7 @@
 import { inngest } from "./client";
 import { prisma } from "@/lib/db";
 import { CurriculumResearcher } from "@/services/curriculum-researcher";
-import { generateTopicContentPack, saveContentPack } from "@/services/content-curator";
+import { generateTopicContentPack, saveContentPack, isContentOutdated, LATEST_CONTENT_VERSION } from "@/services/content-curator";
 
 // 1. Cron Job: Monthly Seeder Scan
 // Scans for empty subjects and topics, then dispatches individual seed events
@@ -28,18 +28,21 @@ export const monthlySeeder = inngest.createFunction(
       );
     }
 
-    // B. Find topics without materials
-    const emptyTopics = await step.run("find-empty-topics", async () => {
-      return prisma.topic.findMany({
-        where: { studyMaterials: { none: {} } },
-        select: { id: true, name: true }
+    // B. Find topics without materials OR with outdated materials
+    const topicsToSeed = await step.run("find-topics-needing-seed", async () => {
+      const allTopics = await prisma.topic.findMany({
+        select: { id: true, name: true, studyMaterials: true }
       });
+
+      return allTopics.filter(topic => isContentOutdated(topic.studyMaterials))
+        .map(t => ({ id: t.id, name: t.name }));
     });
 
-    if (emptyTopics.length > 0) {
+    if (topicsToSeed.length > 0) {
+      console.log(`[Inngest] Monthly Seeder: Found ${topicsToSeed.length} topics needing seed/refresh (Version: ${LATEST_CONTENT_VERSION}).`);
       await step.sendEvent(
         "dispatch-topic-seeders",
-        emptyTopics.map(topic => ({
+        topicsToSeed.map(topic => ({
           name: "app/topic.seed",
           data: { topicId: topic.id }
         }))
@@ -49,7 +52,7 @@ export const monthlySeeder = inngest.createFunction(
     return {
       message: "Monthly scan complete",
       subjectsQueued: emptySubjects.length,
-      topicsQueued: emptyTopics.length
+      topicsQueued: topicsToSeed.length
     };
   }
 );
@@ -100,13 +103,21 @@ export const seedTopicContent = inngest.createFunction(
     }
 
     const result = await step.run("generate-and-save-content", async () => {
-      // Check if already populated to ensure idempotency
+      const { forceRefresh } = event.data;
+      
+      // Check if already populated and up-to-date
       const materials = await prisma.studyMaterial.findMany({
         where: { topicId }
       });
 
-      if (materials.length > 0) {
-        return { skipped: true, reason: "Topic already has materials" };
+      const outdated = isContentOutdated(materials);
+
+      if (materials.length > 0 && !outdated && !forceRefresh) {
+        return { skipped: true, reason: "Topic already has up-to-date materials" };
+      }
+
+      if (outdated || forceRefresh) {
+        console.log(`[Inngest] Refreshing content for topic ${topicId} (Force: ${!!forceRefresh}, Outdated: ${outdated})`);
       }
 
       const pack = await generateTopicContentPack(topicId);

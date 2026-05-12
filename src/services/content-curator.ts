@@ -17,7 +17,10 @@
 
 import { prisma } from "@/lib/db";
 import { genAI, callGemini } from "@/lib/gemini";
-import { QuestionType, BloomLevel } from "@prisma/client";
+import { QuestionType, BloomLevel, StudyMaterial } from "@prisma/client";
+import { fetchYouTubeMeta } from "@/lib/youtube";
+
+export const LATEST_CONTENT_VERSION = "premium-v1";
 
 // ─────────────────────────────────────────────────────────
 // Dedicated model cascade for content generation (16K tokens)
@@ -68,7 +71,7 @@ export interface ContentPack {
   /** Supporting fields */
   keyTakeaways: string[];
   terminology: Array<{ term: string; definition: string }>;
-  youtubeSearchQueries: string[];
+  youtubeVideos: Array<{ videoId: string; title: string }>;
 }
 
 // ─────────────────────────────────────────────────────────
@@ -140,12 +143,13 @@ Generate ALL 7 sections below. Return a JSON object in this EXACT format:
   "terminology": [
     { "term": "Term", "definition": "One-line definition." }
   ],
-  "youtubeSearchQueries": [
-    "NCERT Class ${subject.grade} ${subject.name} ${topic.name} animation 5 minutes"
+  "youtubeVideos": [
+    { "videoId": "YouTube Video ID (e.g. dQw4w9WgXcQ)", "title": "Clear, descriptive video title" }
   ]
 }
 
 IMPORTANT:
+- FOR YOUTUBE: Provide exactly 2 real, high-quality YouTube Video IDs that are highly relevant to this specific topic from reputable NCERT channels (e.g. Khan Academy India, Magnet Brains, BYJU'S). Do NOT hallucinate IDs; if unsure, omit.
 - STRICT LENGTH LIMIT: Absolute maximum of 2 most critical items per section. Pick ONLY the highest yield, most frequently tested concepts.
 - EXTREMELY BITE-SIZED: Keep explanations under 15 words. Use punchy phrasing. No fluff.
 - VISUAL & ENGAGING: Liberally use emojis (⚠️ for mistakes, 💡 for tips, 🔥 for hot topics).
@@ -166,14 +170,30 @@ Return ONLY the JSON object.
     selfAssessmentQuestions: [],
     keyTakeaways: [`Study notes for ${topic.name}`],
     terminology: [],
-    youtubeSearchQueries: [
-      `NCERT Class ${subject.grade} ${subject.name} ${topic.name}`,
-    ],
+    youtubeVideos: [],
   };
 
   const pack = await callGemini<ContentPack>(contentGenModels, prompt, fallback);
 
   return pack;
+}
+
+/**
+ * Checks if the existing study materials are outdated based on the LATEST_CONTENT_VERSION.
+ * Content is outdated if:
+ * 1. It has no materials
+ * 2. It has materials but none contain the current version marker in their description.
+ */
+export function isContentOutdated(materials: StudyMaterial[]): boolean {
+  if (materials.length === 0) return true;
+  
+  // Look for the platform notes (primary source of content)
+  const mainNotes = materials.find(m => m.type === "PLATFORM_CONTENT");
+  if (!mainNotes) return true;
+  
+  // Check for version marker in description
+  const versionMarker = `[Version: ${LATEST_CONTENT_VERSION}]`;
+  return !mainNotes.description?.includes(versionMarker);
 }
 
 // ─────────────────────────────────────────────────────────
@@ -279,6 +299,9 @@ export async function saveContentPack(topicId: string, pack: ContentPack) {
   }
 
   const summaryContent = sections.join("\n\n");
+  const versionMarker = `[Version: ${LATEST_CONTENT_VERSION}]`;
+  const baseDescription = `Comprehensive AI-generated notes with concepts, examples, misconceptions, and practice for ${topic.name}`;
+  const versionedDescription = `${baseDescription} ${versionMarker}`;
 
   // ── Persist to database ───────────────────────────────
 
@@ -289,7 +312,7 @@ export async function saveContentPack(topicId: string, pack: ContentPack) {
     create: {
       id: `ai-notes-${topicId}`,
       title: `${topic.name} — NCERT Smart Notes`,
-      description: `Comprehensive AI-generated notes with concepts, examples, misconceptions, and practice for ${topic.name}`,
+      description: versionedDescription,
       type: "PLATFORM_CONTENT",
       content: summaryContent,
       subjectId: subject.id,
@@ -301,43 +324,55 @@ export async function saveContentPack(topicId: string, pack: ContentPack) {
     },
     update: {
       title: `${topic.name} — NCERT Smart Notes`,
-      description: `Comprehensive AI-generated notes with concepts, examples, misconceptions, and practice for ${topic.name}`,
+      description: versionedDescription,
       content: summaryContent,
       aiGeneratedAt: new Date(),
       isPublished: true,
     },
   });
 
-  // Save YouTube Reference Link
-  if (pack.youtubeSearchQueries && pack.youtubeSearchQueries.length > 0) {
-    const query = pack.youtubeSearchQueries[0];
-    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-
-    await prisma.studyMaterial.upsert({
-      where: {
-        id: `ai-video-ref-${topicId}`,
-      },
-      create: {
-        id: `ai-video-ref-${topicId}`,
-        title: `Video Tutorials: ${topic.name}`,
-        description: `Recommended video search for ${topic.name}`,
-        type: "VIDEO",
-        youtubeUrl: searchUrl,
-        subjectId: subject.id,
-        chapterId: chapter.id,
-        topicId,
-        isAIGenerated: true,
-        aiGeneratedAt: new Date(),
-        isPublished: true,
-      },
-      update: {
-        youtubeUrl: searchUrl,
-        aiGeneratedAt: new Date(),
+  // Save Verified YouTube Reference Links
+  let videosCreated = 0;
+  if (pack.youtubeVideos && pack.youtubeVideos.length > 0) {
+    for (const v of pack.youtubeVideos) {
+      if (!v.videoId) continue;
+      
+      const videoUrl = `https://www.youtube.com/watch?v=${v.videoId}`;
+      const meta = await fetchYouTubeMeta(videoUrl);
+      
+      if (meta) {
+        await prisma.studyMaterial.upsert({
+          where: { id: `ai-video-${topicId}-${v.videoId}` },
+          create: {
+            id: `ai-video-${topicId}-${v.videoId}`,
+            title: meta.title || v.title || `Video: ${topic.name}`,
+            description: `NCERT video lecture for ${topic.name} ${versionMarker}`,
+            type: "VIDEO",
+            youtubeUrl: videoUrl,
+            thumbnailUrl: meta.thumbnailUrl,
+            subjectId: subject.id,
+            chapterId: chapter.id,
+            topicId,
+            isAIGenerated: true,
+            aiGeneratedAt: new Date(),
+            isPublished: true,
+          },
+          update: {
+            youtubeUrl: videoUrl,
+            thumbnailUrl: meta.thumbnailUrl,
+            aiGeneratedAt: new Date(),
+          }
+        });
+        videosCreated++;
       }
-    });
+    }
   }
 
-  // Seed questions into the question bank (with difficulty mapping)
+  // Seed questions into the question bank
+  await prisma.question.deleteMany({
+    where: { source: "ai_generated", subtopic: { topicId } }
+  });
+
   const subtopics = await prisma.subtopic.findMany({
     where: { topicId },
     take: 1,
@@ -375,7 +410,7 @@ export async function saveContentPack(topicId: string, pack: ContentPack) {
   }
 
   return {
-    youtubeSearchQueries: pack.youtubeSearchQueries,
+    materialsCreated: videosCreated + 1,
     materialId: `ai-notes-${topicId}`,
     questionsAdded: pack.selfAssessmentQuestions.length,
   };

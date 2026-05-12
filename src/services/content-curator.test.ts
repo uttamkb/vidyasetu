@@ -17,8 +17,14 @@ vi.mock("@/lib/db", () => ({
     },
     question: {
       create: vi.fn(),
+      deleteMany: vi.fn(),
     },
   },
+}));
+
+vi.mock("@/lib/youtube", () => ({
+  fetchYouTubeMeta: vi.fn(),
+  extractYouTubeId: vi.fn((url) => url.split("v=")[1] || null),
 }));
 
 vi.mock("@/lib/gemini", () => ({
@@ -62,7 +68,7 @@ describe("content-curator", () => {
     ],
     keyTakeaways: ["Force causes acceleration"],
     terminology: [{ term: "Inertia", definition: "Property of matter" }],
-    youtubeSearchQueries: ["NCERT Class 9 Science Laws of Motion"],
+    youtubeVideos: [{ videoId: "dQw4w9WgXcQ", title: "Intro to Inertia" }],
   };
 
   beforeEach(() => {
@@ -87,6 +93,9 @@ describe("content-curator", () => {
     (prisma.subtopic.findMany as any).mockResolvedValue([{ id: "st-1" }]);
     (prisma.studyMaterial.upsert as any).mockResolvedValue({});
     (prisma.question.create as any).mockResolvedValue({});
+    (prisma.question.deleteMany as any).mockResolvedValue({});
+    const { fetchYouTubeMeta } = await import("@/lib/youtube");
+    (fetchYouTubeMeta as any).mockResolvedValue({ thumbnailUrl: "thumb", title: "Video Title" });
 
     const result = await saveContentPack(mockTopicId, mockPack);
 
@@ -100,7 +109,7 @@ describe("content-curator", () => {
 
     // Verify video ref was saved
     expect(prisma.studyMaterial.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: `ai-video-ref-${mockTopicId}` }
+      where: { id: `ai-video-${mockTopicId}-dQw4w9WgXcQ` }
     }));
 
     // Verify question bank seeding

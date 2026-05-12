@@ -25,6 +25,111 @@ interface QuestionContent {
   marks?: number;
 }
 
+const PrintPaper = ({ 
+  fullQuestions, 
+  assignmentId 
+}: { 
+  fullQuestions: Array<{ pointer: QuestionPointer, question: Question }>, 
+  assignmentId: string 
+}) => (
+  <div className="hidden print:block space-y-10 p-4 bg-white text-slate-950 font-serif w-full">
+    {/* Header with Registration Marks */}
+    <div className="relative border-4 border-slate-950 p-8 mb-16 print-header">
+      {/* Corner Registration Marks (Critical for AI Spatial Anchoring) */}
+      <div className="absolute -top-1 -left-1 w-12 h-12 bg-slate-950" />
+      <div className="absolute -top-1 -right-1 w-12 h-12 bg-slate-950" />
+      <div className="absolute -bottom-1 -left-1 w-12 h-12 bg-slate-950" />
+      <div className="absolute -bottom-1 -right-1 w-12 h-12 bg-slate-950" />
+      
+      <div className="text-center">
+        <h1 className="text-3xl font-black uppercase tracking-widest mb-1">Board Ready Examination Paper</h1>
+        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 underline decoration-slate-300 underline-offset-4">Machine-Readable Standard Format (V2.0)</p>
+        
+        <div className="grid grid-cols-2 gap-12 text-left border-t-2 border-slate-100 pt-6">
+          <div className="space-y-3">
+            <div className="text-[10px] font-black text-slate-400 tracking-tighter uppercase">STUDENT NAME (BLOCK LETTERS)</div>
+            <div className="h-10 border-b-2 border-slate-200 w-full" />
+          </div>
+          <div className="space-y-3">
+            <div className="text-[10px] font-black text-slate-400 tracking-tighter uppercase">STUDENT ROLL NO / ID</div>
+            <div className="h-10 border-b-2 border-slate-200 w-full" />
+          </div>
+        </div>
+      </div>
+    </div>
+    
+    {fullQuestions.map((item, index) => {
+      const qContent = item.question?.content as unknown as QuestionContent;
+      const isMCQ = !!qContent?.options;
+      return (
+        <div key={item.pointer.questionId} className="print-break-inside-avoid pb-12 border-b-2 border-slate-50 last:border-0 mb-8">
+          <div className="flex items-start gap-6 mb-6">
+            <div className="bg-slate-950 text-white font-black text-xl w-12 h-12 flex items-center justify-center shrink-0">
+              {index + 1}
+            </div>
+            <div className="flex-1 pt-1">
+              <p className="font-bold text-xl leading-snug mb-2">{qContent?.question}</p>
+              <div className="inline-block px-2 py-0.5 bg-slate-100 text-[10px] font-black text-slate-600 uppercase tracking-tighter">
+                [ Value: {qContent?.maxMarks || qContent?.marks || 1} MARKS ]
+              </div>
+            </div>
+          </div>
+
+          {isMCQ ? (
+            <div className="ml-16 space-y-4">
+              {/* Options List */}
+              <div className="grid grid-cols-1 gap-3 mb-6">
+                {qContent?.options?.map((opt: string, i: number) => (
+                  <div key={i} className="flex items-center gap-4">
+                    <div className="w-7 h-7 rounded-full border-2 border-slate-300 flex items-center justify-center font-bold text-xs text-slate-400">
+                      {String.fromCharCode(65 + i)}
+                    </div>
+                    <span className="text-slate-700 text-sm">{opt}</span>
+                  </div>
+                ))}
+              </div>
+              
+              {/* OMR Response Zone */}
+              <div className="p-6 bg-slate-50 border-2 border-slate-200 rounded-xl max-w-sm">
+                <p className="text-[9px] font-black text-slate-400 mb-4 uppercase tracking-tighter italic">Final OMR Response Zone — Fill one circle completely with Black/Blue Pen</p>
+                <div className="flex justify-between items-center px-4">
+                  {['A', 'B', 'C', 'D'].map(label => (
+                    <div key={label} className="flex flex-col items-center gap-2">
+                       <div className="w-12 h-12 rounded-full border-4 border-slate-950 flex items-center justify-center font-black text-xl">
+                         {label}
+                       </div>
+                       <span className="text-[8px] font-black text-slate-400 tracking-tight">CIRCLE {label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="ml-16">
+              <p className="text-[9px] font-black text-slate-400 mb-3 uppercase tracking-tighter italic">Handwritten Answer Zone — Write your solution strictly within this box</p>
+              <div className="border-4 border-slate-950 min-h-[350px] relative overflow-hidden bg-white shadow-[8px_8px_0px_rgba(0,0,0,0.05)]">
+                 {/* Subtle Graph/Ruled Guides for handwriting alignment */}
+                 <div className="absolute inset-0 opacity-[0.1] pointer-events-none" 
+                      style={{ 
+                        backgroundImage: 'linear-gradient(#000 1px, transparent 1px)', 
+                        backgroundSize: '100% 30px' 
+                      }} />
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    })}
+    
+    {/* Footer Page Marker */}
+    <div className="flex justify-between items-center pt-8 text-[10px] font-bold text-slate-300 border-t border-slate-100">
+      <span>VIDYASETU AI-EXAM-PROTOCOL V2</span>
+      <span>ASSIGNMENT ID: {assignmentId}</span>
+      <span>END OF PAPER</span>
+    </div>
+  </div>
+);
+
 export default function AssignmentForm({
   assignmentId,
   fullQuestions,
@@ -209,103 +314,7 @@ export default function AssignmentForm({
   if (!started) {
     return (
       <>
-        {/* OMR-Structured Print-Only Version */}
-        <div className="hidden print:block space-y-10 p-4 bg-white text-slate-950 font-serif w-full">
-          {/* Header with Registration Marks */}
-          <div className="relative border-4 border-slate-950 p-8 mb-16 print-header">
-            {/* Corner Registration Marks (Critical for AI Spatial Anchoring) */}
-            <div className="absolute -top-1 -left-1 w-12 h-12 bg-slate-950" />
-            <div className="absolute -top-1 -right-1 w-12 h-12 bg-slate-950" />
-            <div className="absolute -bottom-1 -left-1 w-12 h-12 bg-slate-950" />
-            <div className="absolute -bottom-1 -right-1 w-12 h-12 bg-slate-950" />
-            
-            <div className="text-center">
-              <h1 className="text-3xl font-black uppercase tracking-widest mb-1">Board Ready Examination Paper</h1>
-              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 underline decoration-slate-300 underline-offset-4">Machine-Readable Standard Format (V2.0)</p>
-              
-              <div className="grid grid-cols-2 gap-12 text-left border-t-2 border-slate-100 pt-6">
-                <div className="space-y-3">
-                  <div className="text-[10px] font-black text-slate-400 tracking-tighter uppercase">STUDENT NAME (BLOCK LETTERS)</div>
-                  <div className="h-10 border-b-2 border-slate-200 w-full" />
-                </div>
-                <div className="space-y-3">
-                  <div className="text-[10px] font-black text-slate-400 tracking-tighter uppercase">STUDENT ROLL NO / ID</div>
-                  <div className="h-10 border-b-2 border-slate-200 w-full" />
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          {fullQuestions.map((item, index) => {
-            const qContent = item.question?.content as unknown as QuestionContent;
-            const isMCQ = !!qContent?.options;
-            return (
-              <div key={item.pointer.questionId} className="print-break-inside-avoid pb-12 border-b-2 border-slate-50 last:border-0 mb-8">
-                <div className="flex items-start gap-6 mb-6">
-                  <div className="bg-slate-950 text-white font-black text-xl w-12 h-12 flex items-center justify-center shrink-0">
-                    {index + 1}
-                  </div>
-                  <div className="flex-1 pt-1">
-                    <p className="font-bold text-xl leading-snug mb-2">{qContent?.question}</p>
-                    <div className="inline-block px-2 py-0.5 bg-slate-100 text-[10px] font-black text-slate-600 uppercase tracking-tighter">
-                      [ Value: {qContent?.maxMarks || qContent?.marks || 1} MARKS ]
-                    </div>
-                  </div>
-                </div>
-
-                {isMCQ ? (
-                  <div className="ml-16 space-y-4">
-                    {/* Options List */}
-                    <div className="grid grid-cols-1 gap-3 mb-6">
-                      {qContent?.options?.map((opt: string, i: number) => (
-                        <div key={i} className="flex items-center gap-4">
-                          <div className="w-7 h-7 rounded-full border-2 border-slate-300 flex items-center justify-center font-bold text-xs text-slate-400">
-                            {String.fromCharCode(65 + i)}
-                          </div>
-                          <span className="text-slate-700 text-sm">{opt}</span>
-                        </div>
-                      ))}
-                    </div>
-                    
-                    {/* OMR Response Zone */}
-                    <div className="p-6 bg-slate-50 border-2 border-slate-200 rounded-xl max-w-sm">
-                      <p className="text-[9px] font-black text-slate-400 mb-4 uppercase tracking-tighter italic">Final OMR Response Zone — Fill one circle completely with Black/Blue Pen</p>
-                      <div className="flex justify-between items-center px-4">
-                        {['A', 'B', 'C', 'D'].map(label => (
-                          <div key={label} className="flex flex-col items-center gap-2">
-                             <div className="w-12 h-12 rounded-full border-4 border-slate-950 flex items-center justify-center font-black text-xl">
-                               {label}
-                             </div>
-                             <span className="text-[8px] font-black text-slate-400 tracking-tight">CIRCLE {label}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="ml-16">
-                    <p className="text-[9px] font-black text-slate-400 mb-3 uppercase tracking-tighter italic">Handwritten Answer Zone — Write your solution strictly within this box</p>
-                    <div className="border-4 border-slate-950 min-h-[350px] relative overflow-hidden bg-white shadow-[8px_8px_0px_rgba(0,0,0,0.05)]">
-                       {/* Subtle Graph/Ruled Guides for handwriting alignment */}
-                       <div className="absolute inset-0 opacity-[0.1] pointer-events-none" 
-                            style={{ 
-                              backgroundImage: 'linear-gradient(#000 1px, transparent 1px)', 
-                              backgroundSize: '100% 30px' 
-                            }} />
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-          
-          {/* Footer Page Marker */}
-          <div className="flex justify-between items-center pt-8 text-[10px] font-bold text-slate-300 border-t border-slate-100">
-            <span>VIDYASETU AI-EXAM-PROTOCOL V2</span>
-            <span>ASSIGNMENT ID: {assignmentId}</span>
-            <span>END OF PAPER</span>
-          </div>
-        </div>
+        <PrintPaper fullQuestions={fullQuestions} assignmentId={assignmentId} />
 
         {/* Start Screen Card */}
         <Card className="no-print border-none shadow-2xl overflow-hidden">
@@ -369,6 +378,7 @@ export default function AssignmentForm({
   // Active Test (Online or Scan Phase)
   return (
     <div className="space-y-4">
+      <PrintPaper fullQuestions={fullQuestions} assignmentId={assignmentId} />
       {/* Print Styles */}
       <style jsx global>{`
         @page {
@@ -403,9 +413,12 @@ export default function AssignmentForm({
           .print-break-inside-avoid { 
             page-break-inside: avoid !important;
             break-inside: avoid !important;
-            display: block !important;
+            /* Webkit/Blink hack: inline-block or table forces strict block preservation */
+            display: inline-block !important;
+            width: 100% !important;
             position: relative !important;
             margin-bottom: 2rem !important;
+            clear: both !important;
           }
           
           /* Prevent header overlap */
@@ -469,19 +482,29 @@ export default function AssignmentForm({
                        <p className="text-sm text-amber-700 text-center max-w-sm mb-6">
                          Take clear photos of all pages. Ensure registration marks are visible for best accuracy.
                        </p>
-                       <div className="relative">
-                          <input
-                            type="file"
-                            multiple
-                            accept="image/*"
-                            capture="environment"
-                            className="absolute inset-0 opacity-0 cursor-pointer"
-                            onChange={handlePageScan}
-                          />
-                          <Button className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-8 py-6 rounded-xl shadow-lg">
-                             <Upload className="h-5 w-5 mr-2" /> Upload Page Photos
-                          </Button>
-                       </div>
+                       <div className="flex flex-wrap items-center justify-center gap-4">
+                           <Button 
+                             variant="outline"
+                             onClick={() => window.print()}
+                             className="border-amber-200 text-amber-700 hover:bg-amber-50 font-bold px-8 py-6 rounded-xl"
+                           >
+                              <Printer className="h-5 w-5 mr-2" /> Print Paper
+                           </Button>
+
+                           <div className="relative">
+                              <input
+                                type="file"
+                                multiple
+                                accept="image/*"
+                                capture="environment"
+                                className="absolute inset-0 opacity-0 cursor-pointer"
+                                onChange={handlePageScan}
+                              />
+                              <Button className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-8 py-6 rounded-xl shadow-lg">
+                                 <Upload className="h-5 w-5 mr-2" /> Upload Page Photos
+                              </Button>
+                           </div>
+                        </div>
                     </>
                  )}
               </div>

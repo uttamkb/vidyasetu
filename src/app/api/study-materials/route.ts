@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { generateTopicContentPack, saveContentPack } from "@/services/content-curator";
+import { generateTopicContentPack, saveContentPack, isContentOutdated } from "@/services/content-curator";
 
 // GET /api/study-materials
 // Query params:
@@ -74,9 +74,10 @@ export async function GET(req: NextRequest) {
     }
 
     // JUST-IN-TIME (JIT) Content Generation
-    // If a specific topic was requested but has no materials, autonomously generate them.
-    if (topicId && materials.length === 0 && !type && !query) {
-      console.log(`[API] Topic ${topicId} has no materials. Triggering AI Curator...`);
+    // If a specific topic was requested but has no materials or outdated materials, autonomously generate them.
+    const isOutdated = isContentOutdated(materials);
+    if (topicId && isOutdated && !type && !query) {
+      console.log(`[API] Topic ${topicId} content is missing or outdated. Triggering AI Curator...`);
       try {
         const pack = await generateTopicContentPack(topicId);
         await saveContentPack(topicId, pack);
