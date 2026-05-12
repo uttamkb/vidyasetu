@@ -137,6 +137,8 @@ export default async function AssignmentDetailPage({
           fullQuestions={fullQuestions as any}
           maxMarks={assignment.maxMarks}
           timeLimit={assignment.timeLimit}
+          title={assignment.title}
+          subjectName={assignment.subject.name}
         />
       )}
     </div>

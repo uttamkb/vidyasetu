@@ -250,6 +250,37 @@ describe("evaluation-engine", () => {
       data: expect.objectContaining({ masteryScore: 5 })
     }));
   });
+  it("handles maxMarks 0 safely", async () => {
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSubmission,
+      maxMarks: 0,
+      answers: [],
+    });
+    (prisma.question.findMany as any).mockResolvedValue([]);
+    (prisma.user.findUnique as any).mockResolvedValue({ leaderboardOptIn: true });
+
+    const result = await evaluateSubmission(mockSubmissionId);
+    expect(result.percentageScore).toBe(0);
+  });
+
+  it("calculates growth score for a perfect submission with high streak", async () => {
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSubmission,
+      timeTaken: 600,
+      assignment: { ...mockSubmission.assignment, difficulty: "HARD" },
+      user: { 
+        id: "user-1", 
+        leaderboardOptIn: true,
+        studyStreak: { currentStreak: 30 } 
+      },
+    });
+    (prisma.question.findMany as any).mockResolvedValue(mockQuestions);
+    (callGemini as any).mockResolvedValue({ isCorrect: true, marksAwarded: 5, feedback: "Perfect" });
+
+    const result = await evaluateSubmission(mockSubmissionId);
+    expect(result.percentageScore).toBe(100);
+    expect(prisma.leaderboardEntry.upsert).toHaveBeenCalled();
+  });
 });
 
 

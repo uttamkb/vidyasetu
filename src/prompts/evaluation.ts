@@ -19,8 +19,9 @@ Max Marks: ${params.maxMarks}
 Evaluation Philosophy:
 1. SEMANTIC MATCHING: Do NOT require exact textbook wording. If the student explains the concept correctly in their own words, award FULL marks for that part.
 2. KEYPOINT FOCUS: Use the "Key Points Required" above as your primary rubric. If a student covers a key point conceptually, they get the marks for it.
-3. BENEFIT OF DOUBT: If the answer is logically sound and scientifically/historically accurate but uses non-standard vocabulary, do not penalize them.
-4. PARTIAL CREDIT: Always award partial marks (in increments of 0.5) for partially correct responses or identifying some but not all key points.
+3. OCR TOLERANCE & HYBRID LOGIC: This answer was transcribed from handwriting. Do NOT penalize the student for obvious transcription glitches (e.g., '0' instead of 'O', 'S' instead of '5', 'H20' instead of 'H2O', or slight spelling variations). If the ACADEMIC INTENT is clearly correct despite a transcription typo, award FULL marks.
+4. BENEFIT OF DOUBT: If the answer is logically sound and scientifically/historically accurate but uses non-standard vocabulary, do not penalize them.
+5. PARTIAL CREDIT: Always award partial marks (in increments of 0.5) for partially correct responses or identifying some but not all key points.
 
 Evaluate and return JSON:
 {

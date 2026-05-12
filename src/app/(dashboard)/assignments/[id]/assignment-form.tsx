@@ -27,105 +27,93 @@ interface QuestionContent {
 
 const PrintPaper = ({ 
   fullQuestions, 
-  assignmentId 
+  assignmentId,
+  title,
+  subjectName
 }: { 
   fullQuestions: Array<{ pointer: QuestionPointer, question: Question }>, 
-  assignmentId: string 
+  assignmentId: string,
+  title?: string,
+  subjectName?: string
 }) => (
-  <div className="hidden print:block space-y-10 p-4 bg-white text-slate-950 font-serif w-full">
-    {/* Header with Registration Marks */}
-    <div className="relative border-4 border-slate-950 p-8 mb-16 print-header">
-      {/* Corner Registration Marks (Critical for AI Spatial Anchoring) */}
-      <div className="absolute -top-1 -left-1 w-12 h-12 bg-slate-950" />
-      <div className="absolute -top-1 -right-1 w-12 h-12 bg-slate-950" />
-      <div className="absolute -bottom-1 -left-1 w-12 h-12 bg-slate-950" />
-      <div className="absolute -bottom-1 -right-1 w-12 h-12 bg-slate-950" />
-      
-      <div className="text-center">
-        <h1 className="text-3xl font-black uppercase tracking-widest mb-1">Board Ready Examination Paper</h1>
-        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 underline decoration-slate-300 underline-offset-4">Machine-Readable Standard Format (V2.0)</p>
-        
-        <div className="grid grid-cols-2 gap-12 text-left border-t-2 border-slate-100 pt-6">
-          <div className="space-y-3">
-            <div className="text-[10px] font-black text-slate-400 tracking-tighter uppercase">STUDENT NAME (BLOCK LETTERS)</div>
-            <div className="h-10 border-b-2 border-slate-200 w-full" />
+  <div className="hidden print:block space-y-4 p-6 bg-white text-slate-950 font-serif w-full max-w-4xl mx-auto">
+    {/* Clean Academic Header */}
+    <div className="border-b-2 border-slate-950 pb-4 mb-6">
+      <div className="flex justify-between items-end mb-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">{subjectName || "Subject"}</span>
+             <span className="w-1 h-1 bg-slate-200 rounded-full" />
+             <Badge variant="outline" className="text-[7px] border-slate-200 text-slate-400 font-bold px-1.5 py-0 leading-none">FLEX-SOLVE V2.1</Badge>
           </div>
-          <div className="space-y-3">
-            <div className="text-[10px] font-black text-slate-400 tracking-tighter uppercase">STUDENT ROLL NO / ID</div>
-            <div className="h-10 border-b-2 border-slate-200 w-full" />
-          </div>
+          <h1 className="text-xl font-black uppercase tracking-tight text-slate-900 leading-none">{title || "Assignment Worksheet"}</h1>
+          <p className="text-[8px] font-bold text-slate-300 uppercase tracking-widest mt-2">PAPER ID: {assignmentId.slice(0, 8)}...</p>
+        </div>
+      </div>
+    </div>
+
+    {/* Student Best Practices Guide - More Compact */}
+    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mb-6">
+      <div className="flex items-center gap-2 mb-2">
+        <Camera className="h-3 w-3 text-slate-950" />
+        <h4 className="text-[9px] font-black uppercase tracking-widest text-slate-950">Solving & Scanning Guide</h4>
+      </div>
+      <div className="grid grid-cols-2 gap-6">
+        <div className="space-y-1">
+          <p className="text-[7px] font-black text-slate-400 uppercase tracking-tighter border-b border-slate-200 pb-0.5 mb-1">Step 1: Solving</p>
+          <ul className="text-[9px] space-y-0.5 text-slate-700 font-medium leading-tight">
+            <li>• Use <span className="font-bold">Dark Blue/Black ink</span>.</li>
+            <li>• Mark answers with <span className="font-bold">Q1, Q2, etc.</span></li>
+          </ul>
+        </div>
+        <div className="space-y-1">
+          <p className="text-[7px] font-black text-slate-400 uppercase tracking-tighter border-b border-slate-200 pb-0.5 mb-1">Step 2: Scanning</p>
+          <ul className="text-[9px] space-y-0.5 text-slate-700 font-medium leading-tight">
+            <li>• Hold camera <span className="font-bold">parallel</span> to paper.</li>
+            <li>• Capture the <span className="font-bold">entire page</span> frame.</li>
+          </ul>
         </div>
       </div>
     </div>
     
-    {fullQuestions.map((item, index) => {
-      const qContent = item.question?.content as unknown as QuestionContent;
-      const isMCQ = !!qContent?.options;
-      return (
-        <div key={item.pointer.questionId} className="print-break-inside-avoid pb-12 border-b-2 border-slate-50 last:border-0 mb-8">
-          <div className="flex items-start gap-6 mb-6">
-            <div className="bg-slate-950 text-white font-black text-xl w-12 h-12 flex items-center justify-center shrink-0">
-              {index + 1}
-            </div>
-            <div className="flex-1 pt-1">
-              <p className="font-bold text-xl leading-snug mb-2">{qContent?.question}</p>
-              <div className="inline-block px-2 py-0.5 bg-slate-100 text-[10px] font-black text-slate-600 uppercase tracking-tighter">
-                [ Value: {qContent?.maxMarks || qContent?.marks || 1} MARKS ]
+    {/* Question List - Compacted */}
+    <div className="space-y-6 pb-10">
+      {fullQuestions.map((item, index) => {
+        const qContent = item.question?.content as unknown as QuestionContent;
+        const isMCQ = !!qContent?.options;
+        return (
+          <div key={item.pointer.questionId} className="print-break-inside-avoid border-b border-slate-50 pb-4 last:border-0">
+            <div className="flex items-start gap-4 mb-2">
+              <div className="font-black text-lg text-slate-950 min-w-[30px]">
+                {index + 1}.
               </div>
-            </div>
-          </div>
-
-          {isMCQ ? (
-            <div className="ml-16 space-y-4">
-              {/* Options List */}
-              <div className="grid grid-cols-1 gap-3 mb-6">
-                {qContent?.options?.map((opt: string, i: number) => (
-                  <div key={i} className="flex items-center gap-4">
-                    <div className="w-7 h-7 rounded-full border-2 border-slate-300 flex items-center justify-center font-bold text-xs text-slate-400">
-                      {String.fromCharCode(65 + i)}
-                    </div>
-                    <span className="text-slate-700 text-sm">{opt}</span>
-                  </div>
-                ))}
-              </div>
-              
-              {/* OMR Response Zone */}
-              <div className="p-6 bg-slate-50 border-2 border-slate-200 rounded-xl max-w-sm">
-                <p className="text-[9px] font-black text-slate-400 mb-4 uppercase tracking-tighter italic">Final OMR Response Zone — Fill one circle completely with Black/Blue Pen</p>
-                <div className="flex justify-between items-center px-4">
-                  {['A', 'B', 'C', 'D'].map(label => (
-                    <div key={label} className="flex flex-col items-center gap-2">
-                       <div className="w-12 h-12 rounded-full border-4 border-slate-950 flex items-center justify-center font-black text-xl">
-                         {label}
-                       </div>
-                       <span className="text-[8px] font-black text-slate-400 tracking-tight">CIRCLE {label}</span>
-                    </div>
-                  ))}
+              <div className="flex-1">
+                <p className="font-bold text-sm leading-tight mb-2 text-slate-900">{qContent?.question}</p>
+                <div className="inline-flex items-center px-1.5 py-0 bg-slate-100 text-[8px] font-black text-slate-500 uppercase tracking-widest rounded">
+                  {qContent?.maxMarks || qContent?.marks || 1} Marks
                 </div>
               </div>
             </div>
-          ) : (
-            <div className="ml-16">
-              <p className="text-[9px] font-black text-slate-400 mb-3 uppercase tracking-tighter italic">Handwritten Answer Zone — Write your solution strictly within this box</p>
-              <div className="border-4 border-slate-950 min-h-[350px] relative overflow-hidden bg-white shadow-[8px_8px_0px_rgba(0,0,0,0.05)]">
-                 {/* Subtle Graph/Ruled Guides for handwriting alignment */}
-                 <div className="absolute inset-0 opacity-[0.1] pointer-events-none" 
-                      style={{ 
-                        backgroundImage: 'linear-gradient(#000 1px, transparent 1px)', 
-                        backgroundSize: '100% 30px' 
-                      }} />
+
+            {isMCQ && (
+              <div className="ml-12 grid grid-cols-2 gap-x-8 gap-y-1.5">
+                {qContent?.options?.map((opt: string, i: number) => (
+                  <div key={i} className="flex items-start gap-2 text-xs">
+                    <span className="font-bold text-slate-400">({String.fromCharCode(65 + i)})</span>
+                    <span className="text-slate-700 font-medium">{opt}</span>
+                  </div>
+                ))}
               </div>
-            </div>
-          )}
-        </div>
-      );
-    })}
+            )}
+          </div>
+        );
+      })}
+    </div>
     
-    {/* Footer Page Marker */}
-    <div className="flex justify-between items-center pt-8 text-[10px] font-bold text-slate-300 border-t border-slate-100">
-      <span>VIDYASETU AI-EXAM-PROTOCOL V2</span>
-      <span>ASSIGNMENT ID: {assignmentId}</span>
-      <span>END OF PAPER</span>
+    {/* Clean Footer */}
+    <div className="border-t border-slate-100 pt-4 flex justify-between items-center text-[8px] font-bold text-slate-300 uppercase tracking-widest">
+      <span>NCERT STANDARD AI-ASSISTED</span>
+      <span>VIDYASETU V2.1</span>
     </div>
   </div>
 );
@@ -135,11 +123,15 @@ export default function AssignmentForm({
   fullQuestions,
   maxMarks,
   timeLimit,
+  title,
+  subjectName,
 }: {
   assignmentId: string;
   fullQuestions: Array<{ pointer: QuestionPointer, question: Question }>;
   maxMarks: number;
   timeLimit: number | null;
+  title?: string;
+  subjectName?: string;
 }) {
   const router = useRouter();
   const [answers, setAnswers] = useState<Record<number, string>>({});
@@ -314,7 +306,12 @@ export default function AssignmentForm({
   if (!started) {
     return (
       <>
-        <PrintPaper fullQuestions={fullQuestions} assignmentId={assignmentId} />
+        <PrintPaper 
+          fullQuestions={fullQuestions} 
+          assignmentId={assignmentId} 
+          title={title}
+          subjectName={subjectName}
+        />
 
         {/* Start Screen Card */}
         <Card className="no-print border-none shadow-2xl overflow-hidden">
@@ -357,7 +354,7 @@ export default function AssignmentForm({
                   </div>
                   <div>
                     <h3 className="font-bold text-lg">Practice on Paper</h3>
-                    <p className="text-sm text-muted-foreground">Print as an OMR paper. Write offline. Scan to grade.</p>
+                    <p className="text-sm text-muted-foreground">Print worksheet. Solve on any paper. Scan to grade.</p>
                   </div>
                 </div>
               </div>
@@ -378,7 +375,12 @@ export default function AssignmentForm({
   // Active Test (Online or Scan Phase)
   return (
     <div className="space-y-4">
-      <PrintPaper fullQuestions={fullQuestions} assignmentId={assignmentId} />
+      <PrintPaper 
+        fullQuestions={fullQuestions} 
+        assignmentId={assignmentId} 
+        title={title}
+        subjectName={subjectName}
+      />
       {/* Print Styles */}
       <style jsx global>{`
         @page {
@@ -471,16 +473,16 @@ export default function AssignmentForm({
                     <div className="flex flex-col items-center space-y-4">
                        <div className="w-12 h-12 border-4 border-amber-400 border-t-transparent rounded-full animate-spin" />
                        <p className="font-bold text-amber-900">Analyzing your paper with AI...</p>
-                       <p className="text-xs text-amber-600">Please wait, transcribing handwriting and OMR bubbles.</p>
+                       <p className="text-xs text-amber-600">Please wait, transcribing your handwritten answers.</p>
                     </div>
                  ) : (
                     <>
                        <div className="p-4 bg-amber-100 rounded-full mb-4">
                           <Camera className="h-10 w-10 text-amber-600" />
                        </div>
-                       <h4 className="text-xl font-black text-amber-900 mb-2">Scan Finished Paper</h4>
+                       <h4 className="text-xl font-black text-amber-900 mb-2">Scan Your Answers</h4>
                        <p className="text-sm text-amber-700 text-center max-w-sm mb-6">
-                         Take clear photos of all pages. Ensure registration marks are visible for best accuracy.
+                         Take clear photos of all your answer sheets. Ensure question numbers (e.g., Q1, Ans 2) are clearly visible.
                        </p>
                        <div className="flex flex-wrap items-center justify-center gap-4">
                            <Button 

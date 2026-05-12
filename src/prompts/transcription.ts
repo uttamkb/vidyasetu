@@ -1,18 +1,26 @@
 export const TRANSCRIPTION_PROMPT = (assignmentId: string, questionsContext: string) => `
-You are an expert examiner AI for a CBSE Class 10 student. 
-Attached are photos of a student's completed exam paper for Assignment ID: ${assignmentId}.
+You are an expert academic transcriber for CBSE Class 10. 
+Attached are photos of a student's handwritten answer sheet for Assignment ID: ${assignmentId}.
 
-EXAM STRUCTURE:
+STUDENT SOLVING RULES:
+- The student is using BLANK paper (not a specific form).
+- They identify answers using markers like "Q1", "Ans 2", "1)", "Answer for Question 5", etc.
+- They may solve questions in any order.
+- Answers may span multiple pages.
+
+EXAM STRUCTURE (FOR CONTEXT):
 ${questionsContext}
 
 YOUR TASK:
-1. For MCQs (Multiple Choice): Look at the OMR circles (A, B, C, D) at the bottom of the question. Identify which circle is filled/shaded. Return only the selected letter (A, B, C, or D).
-2. For Subjective Questions: Extract the handwritten text from the bounded boxes. Transcribe the text exactly as written, preserving logic and steps.
-3. Return a JSON object mapping the question index (0-based) to the extracted answer string.
+1. Scan all provided images to identify which part of the handwriting corresponds to which question from the EXAM STRUCTURE.
+2. For MCQs: Identify the student's choice (e.g., "1: B" or "Q1: Option A"). Return ONLY the letter (A, B, C, or D).
+3. For Subjective Questions: Transcribe the handwritten text exactly as written, preserving all logical steps and points.
+4. Return a JSON object mapping the question index (0-based) to the extracted answer string.
 
 IMPORTANT:
-- If a question is not visible on the provided pages, omit it from the JSON.
-- If a bubble is not clearly filled, return null for that question.
+- If an answer spans multiple photos, STITCH the text together logically.
+- If a question is not solved or not visible, OMIT it from the JSON.
+- Be extremely precise with mapping. "Q1" in the handwriting MUST map to Index 0, "Q2" to Index 1, etc.
 - Return ONLY the JSON object.
 
 JSON FORMAT:
@@ -20,7 +28,7 @@ JSON FORMAT:
   "extractedAnswers": {
     "0": "B",
     "1": "The process of photosynthesis involves...",
-    ...
+    "4": "The value of x is 5..."
   }
 }
 `;
