@@ -83,6 +83,7 @@ async function getDashboardData(userId: string) {
     targetScore: user?.targetScore ?? 85,
     xp: user?.xp ?? 0,
     level: user?.level ?? "Beginner",
+    name: user?.name ?? "Student",
     masteredTopicsTotal: masteryStats._count.id,
     avgMastery: Math.round(masteryStats._avg.masteryScore ?? 0),
     masteredThisWeek,
@@ -131,7 +132,7 @@ export default async function DashboardPage() {
         <div>
           <h1 className="text-4xl font-heading font-black tracking-tight">Dashboard</h1>
           <p className="text-muted-foreground text-lg mt-1">
-            Welcome back, <span className="font-semibold text-foreground">{session.user.name || "Student"}</span>! Here&apos;s your weekly overview.
+            Welcome back, <span className="font-semibold text-foreground">{data.name}</span>! Here&apos;s your weekly overview.
           </p>
         </div>
       </div>

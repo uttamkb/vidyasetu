@@ -136,7 +136,7 @@ export default async function AssignmentsPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Assignments</h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-foreground/80 font-semibold mt-1">
             {pending.length} pending · {completed.length} completed
           </p>
         </div>
@@ -202,7 +202,7 @@ function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
           <Badge variant="outline" className="text-xs">{a.type.replace("_", " ")}</Badge>
           <div className="flex items-center gap-1.5">
             <div className={`w-2 h-2 rounded-full ${STATUS_DOT[a.status]}`} />
-            <span className="text-xs text-muted-foreground">{STATUS_LABEL[a.status]}</span>
+            <span className="text-xs text-foreground/80 font-bold">{STATUS_LABEL[a.status]}</span>
             {isDone && (
               <Link href={`/assignments/${a.id}?retest=true`}>
                 <Button size="icon" variant="ghost" className="h-7 w-7 text-amber-600 hover:text-amber-700 hover:bg-amber-50" title="Take Retest">
@@ -213,9 +213,9 @@ function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
             <ArchiveButton assignmentId={a.id} />
           </div>
         </div>
-        <CardTitle className="text-base mt-2 leading-snug">{a.title}</CardTitle>
+        <CardTitle className="text-base mt-2 leading-snug font-bold">{a.title}</CardTitle>
         {a.description && (
-          <CardDescription className="line-clamp-2">{a.description}</CardDescription>
+          <CardDescription className="line-clamp-2 text-foreground/70 font-medium">{a.description}</CardDescription>
         )}
       </CardHeader>
 
@@ -227,7 +227,7 @@ function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
         </div>
 
         {/* Meta */}
-        <div className="space-y-1.5 text-xs text-muted-foreground flex-1">
+        <div className="space-y-1.5 text-xs text-foreground/70 font-bold flex-1">
           {a.timeLimit && (
             <div className="flex items-center gap-1.5">
               <Clock className="h-3.5 w-3.5" />
@@ -244,8 +244,8 @@ function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
         {pct !== null && (
           <div className="mt-3 space-y-1">
             <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Score</span>
-              <span className={`font-bold ${scoreColor(pct)}`}>
+              <span className="text-foreground/70 font-bold">Score</span>
+              <span className={`font-black ${scoreColor(pct)}`}>
                 {a.totalScore}/{a.maxMarks} ({pct}%)
               </span>
             </div>

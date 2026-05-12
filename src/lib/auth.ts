@@ -75,6 +75,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (user.id?.startsWith("demo-") || !user.email) {
           // Fallback path — should not normally be reached
           token.id = user.id;
+          token.name = user.name;
+          token.image = user.image;
           token.isOnboarded = false;
           token.role = "STUDENT";
         } else {
@@ -83,23 +85,29 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               where: { email: user.email },
               update: { name: user.name, image: user.image },
               create: { email: user.email, name: user.name, image: user.image, grade: "9", role: "STUDENT" },
-              select: { id: true, isOnboarded: true, role: true },
+              select: { id: true, isOnboarded: true, role: true, name: true, image: true },
             });
             token.id = dbUser.id;
+            token.name = dbUser.name;
+            token.image = dbUser.image;
             token.isOnboarded = dbUser.isOnboarded;
             token.role = dbUser.role;
           } catch (err) {
             console.error("[auth] jwt callback DB sync failed:", err);
             token.id = user.id;
+            token.name = user.name;
+            token.image = user.image;
             token.isOnboarded = false;
             token.role = "STUDENT";
           }
         }
       }
 
-      // Handle session.update() calls (e.g. after completing onboarding flow)
-      if (trigger === "update" && session?.isOnboarded !== undefined) {
-        token.isOnboarded = session.isOnboarded;
+      // Handle session.update() calls
+      if (trigger === "update" && session) {
+        if (session.name !== undefined) token.name = session.name;
+        if (session.image !== undefined) token.image = session.image;
+        if (session.isOnboarded !== undefined) token.isOnboarded = session.isOnboarded;
       }
 
       return token;
@@ -112,6 +120,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     session({ session, token }) {
       if (token.id && session.user) {
         session.user.id = token.id as string;
+        session.user.name = token.name as string;
+        session.user.image = token.image as string;
         session.user.isOnboarded = (token.isOnboarded as boolean) ?? false;
         session.user.role = (token.role as string) ?? "STUDENT";
       }

@@ -46,7 +46,9 @@ export default function OnboardingPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Step 1: Location
+  // Step 1: Profile & Location
+  const [grade, setGrade] = useState("9");
+  const [board, setBoard] = useState("CBSE");
   const [state, setState] = useState("");
   const [district, setDistrict] = useState("");
   const [school, setSchool] = useState("");
@@ -82,6 +84,8 @@ export default function OnboardingPage() {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          grade,
+          board,
           state: state.trim(),
           district: district.trim() || undefined,
           school: school.trim() || undefined,
@@ -185,9 +189,40 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* Step 1 — Location */}
+          {/* Step 1 — Profile & Location */}
           {step === 1 && (
             <div className="space-y-5">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="grade">Class/Grade</Label>
+                  <Select value={grade} onValueChange={setGrade}>
+                    <SelectTrigger id="grade">
+                      <SelectValue placeholder="Select class" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="8">Class 8</SelectItem>
+                      <SelectItem value="9">Class 9</SelectItem>
+                      <SelectItem value="10">Class 10</SelectItem>
+                      <SelectItem value="11">Class 11</SelectItem>
+                      <SelectItem value="12">Class 12</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="board">Education Board</Label>
+                  <Select value={board} onValueChange={setBoard}>
+                    <SelectTrigger id="board">
+                      <SelectValue placeholder="Select board" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CBSE">CBSE</SelectItem>
+                      <SelectItem value="ICSE">ICSE</SelectItem>
+                      <SelectItem value="State Board">State Board</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <div className="space-y-2">
                 <Label htmlFor="state">
                   State <span className="text-destructive">*</span>

@@ -32,8 +32,11 @@ async function getProfileData(userId: string) {
   if (!user) return null;
 
   const totalSubmissions = user.submissions.length;
-  const completedSubmissions = user.submissions.filter((s: any) => s.status === "SUBMITTED").length;
-  const scores = user.submissions.map((s: any) => (s.score / s.maxMarks) * 100);
+  const completedSubmissions = user.submissions.filter((s: any) => s.status === "EVALUATED").length;
+  const scores = user.submissions
+    .filter((s: any) => s.status === "EVALUATED")
+    .map((s: any) => s.percentageScore);
+    
   const averageScore = scores.length > 0
     ? Math.round(scores.reduce((a: number, b: number) => a + b, 0) / scores.length)
     : 0;

@@ -22,10 +22,14 @@ import {
   DialogTitle, 
   DialogTrigger 
 } from "@/components/ui/dialog";
-import { Pencil } from "lucide-react";
+import { Pencil, Trophy, ImageIcon } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+
+import { useSession } from "next-auth/react";
 
 export function EditProfileModal({ user }: { user: UserProfileData }) {
   const router = useRouter();
+  const { update } = useSession();
   const [open, setOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -33,6 +37,8 @@ export function EditProfileModal({ user }: { user: UserProfileData }) {
     name: user.name || "",
     grade: user.grade || "9",
     board: user.board || "CBSE",
+    image: user.image || "",
+    leaderboardOptIn: user.leaderboardOptIn || false,
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -49,6 +55,12 @@ export function EditProfileModal({ user }: { user: UserProfileData }) {
       });
 
       if (response.ok) {
+        // Update local session to sync Navbar name and image
+        await update({ 
+          name: formData.name,
+          image: formData.image,
+        });
+        
         setOpen(false);
         router.refresh();
       } else {
@@ -121,6 +133,41 @@ export function EditProfileModal({ user }: { user: UserProfileData }) {
                 <SelectItem value="State Board">State Board</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="image">Profile Picture URL</Label>
+            <div className="flex gap-2">
+              <Input 
+                id="image" 
+                value={formData.image} 
+                onChange={(e) => setFormData({ ...formData, image: e.target.value })} 
+                placeholder="https://example.com/photo.jpg" 
+              />
+              <div className="flex items-center justify-center w-10 h-10 border rounded-md bg-muted">
+                {formData.image ? (
+                  <img src={formData.image} alt="Preview" className="w-8 h-8 rounded-full object-cover" />
+                ) : (
+                  <ImageIcon className="w-5 h-5 text-muted-foreground" />
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-4 shadow-sm">
+            <div className="space-y-0.5">
+              <Label className="text-base flex items-center gap-2">
+                <Trophy className="w-4 h-4 text-amber-500" />
+                Leaderboard Opt-in
+              </Label>
+              <p className="text-sm text-muted-foreground">
+                Appear in rankings and compete with others.
+              </p>
+            </div>
+            <Switch
+              checked={formData.leaderboardOptIn}
+              onCheckedChange={(checked) => setFormData({ ...formData, leaderboardOptIn: checked })}
+            />
           </div>
 
           <DialogFooter>

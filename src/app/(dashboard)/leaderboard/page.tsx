@@ -69,14 +69,14 @@ function RankBadge({ rank }: { rank: number }) {
   if (rank === 1) return <Crown className="h-5 w-5 text-amber-400" />;
   if (rank === 2) return <Medal className="h-5 w-5 text-slate-400" />;
   if (rank === 3) return <Medal className="h-5 w-5 text-amber-700" />;
-  return <span className="text-sm font-bold text-muted-foreground w-5 text-center">{rank}</span>;
+  return <span className="text-sm font-black text-foreground/70 w-5 text-center">{rank}</span>;
 }
 
 function ScoreBar({ score }: { score: number }) {
   return (
     <div className="flex items-center justify-end">
       <span className="text-base font-black text-primary tabular-nums tracking-tight">
-        {Math.round(score).toLocaleString()} <span className="text-muted-foreground font-bold text-xs ml-0.5">pts</span>
+        {Math.round(score).toLocaleString()} <span className="text-foreground/60 font-black text-[10px] uppercase ml-0.5">pts</span>
       </span>
     </div>
   );
@@ -318,7 +318,7 @@ export default function LeaderboardPage() {
                   {/* Name + meta */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={`font-medium text-sm truncate ${entry.isCurrentUser ? "text-primary" : ""}`}>
+                      <span className={`font-bold text-sm truncate ${entry.isCurrentUser ? "text-primary" : "text-foreground"}`}>
                         {entry.isCurrentUser ? `${entry.name} (You)` : entry.name}
                       </span>
                       {entry.rank <= 3 && (
@@ -336,7 +336,7 @@ export default function LeaderboardPage() {
                         </Badge>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">
+                    <p className="text-xs text-foreground/70 font-semibold truncate">
                       {[entry.school, entry.district, entry.state].filter(Boolean).join(", ") || "—"}
                     </p>
                   </div>
@@ -344,7 +344,7 @@ export default function LeaderboardPage() {
                   {/* Score */}
                   <div className="shrink-0 text-right min-w-[100px]">
                     <ScoreBar score={entry.growthScore} />
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <p className="text-xs text-foreground/60 font-bold mt-0.5">
                       {entry.submissionCount} test{entry.submissionCount !== 1 ? "s" : ""}
                     </p>
                   </div>

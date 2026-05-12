@@ -7,6 +7,8 @@ const updateProfileSchema = z.object({
   name: z.string().min(1, "Name is required").max(100),
   grade: z.string().min(1, "Grade is required"),
   board: z.string().min(1, "Board is required"),
+  image: z.string().optional().nullable(),
+  leaderboardOptIn: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request) {
@@ -29,6 +31,8 @@ export async function PATCH(req: Request) {
         name: validatedData.name,
         grade: validatedData.grade,
         board: validatedData.board,
+        image: validatedData.image,
+        leaderboardOptIn: validatedData.leaderboardOptIn,
       },
     });
 

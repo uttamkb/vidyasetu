@@ -4,6 +4,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 const onboardingSchema = z.object({
+  grade: z.string().min(1, "Grade is required"),
+  board: z.string().min(1, "Board is required"),
   hardestSubjects: z.array(z.string()).min(1, "Select at least one subject"),
   targetScore: z.number().min(0).max(100),
   studyTimePreference: z.string().min(1, "Select a study time preference"),
@@ -30,6 +32,8 @@ export async function PATCH(req: Request) {
     const updatedUser = await prisma.user.update({
       where: { id: session.user.id },
       data: {
+        grade: validatedData.grade,
+        board: validatedData.board,
         hardestSubjects: validatedData.hardestSubjects,
         targetScore: validatedData.targetScore,
         studyTimePreference: validatedData.studyTimePreference,
