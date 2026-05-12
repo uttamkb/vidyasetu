@@ -211,7 +211,7 @@ export default function AssignmentForm({
         setAnswers(data.extractedAnswers);
         setNeedsVerification(true);
       } else {
-        alert("Unable to extract answers. Please try with clearer photos.");
+        alert("Unable to extract answers. Please try with clearer photos or PDF pages.");
       }
     } catch (err) {
       alert("Failed to transcribe paper. Please check your connection.");
@@ -481,32 +481,32 @@ export default function AssignmentForm({
                           <Camera className="h-10 w-10 text-amber-600" />
                        </div>
                        <h4 className="text-xl font-black text-amber-900 mb-2">Scan Your Answers</h4>
-                       <p className="text-sm text-amber-700 text-center max-w-sm mb-6">
-                         Take clear photos of all your answer sheets. Ensure question numbers (e.g., Q1, Ans 2) are clearly visible.
-                       </p>
-                       <div className="flex flex-wrap items-center justify-center gap-4">
-                           <Button 
-                             variant="outline"
-                             onClick={() => window.print()}
-                             className="border-amber-200 text-amber-700 hover:bg-amber-50 font-bold px-8 py-6 rounded-xl"
-                           >
-                              <Printer className="h-5 w-5 mr-2" /> Print Paper
-                           </Button>
+                        <p className="text-sm text-amber-700 text-center max-w-sm mb-6">
+                          Take clear photos or upload a PDF of all your answer sheets. Ensure question numbers (e.g., Q1, Ans 2) are clearly visible.
+                        </p>
+                        <div className="flex flex-wrap items-center justify-center gap-4">
+                            <Button 
+                              variant="outline"
+                              onClick={() => window.print()}
+                              className="border-amber-200 text-amber-700 hover:bg-amber-50 font-bold px-8 py-6 rounded-xl"
+                            >
+                               <Printer className="h-5 w-5 mr-2" /> Print Paper
+                            </Button>
 
-                           <div className="relative">
-                              <input
-                                type="file"
-                                multiple
-                                accept="image/*"
-                                capture="environment"
-                                className="absolute inset-0 opacity-0 cursor-pointer"
-                                onChange={handlePageScan}
-                              />
-                              <Button className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-8 py-6 rounded-xl shadow-lg">
-                                 <Upload className="h-5 w-5 mr-2" /> Upload Page Photos
-                              </Button>
-                           </div>
-                        </div>
+                            <div className="relative">
+                               <input
+                                 type="file"
+                                 multiple
+                                 accept="image/*,.pdf,application/pdf"
+                                 capture="environment"
+                                 className="absolute inset-0 opacity-0 cursor-pointer"
+                                 onChange={handlePageScan}
+                               />
+                               <Button className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-8 py-6 rounded-xl shadow-lg">
+                                  <Upload className="h-5 w-5 mr-2" /> Upload Pages / PDF
+                               </Button>
+                            </div>
+                         </div>
                     </>
                  )}
               </div>
@@ -626,7 +626,7 @@ export default function AssignmentForm({
                                      <div className="relative">
                                        <input
                                          type="file"
-                                         accept="image/*"
+                                         accept="image/*,.pdf,application/pdf"
                                          capture="environment"
                                          className="absolute inset-0 opacity-0 cursor-pointer"
                                          onChange={(e) => handleFileUpload(index, e)}
@@ -637,7 +637,7 @@ export default function AssignmentForm({
                                          size="sm"
                                          className="rounded-lg h-9"
                                        >
-                                         <Camera className="h-4 w-4 mr-2" /> Photo of Paper
+                                         <Camera className="h-4 w-4 mr-2" /> Photo or PDF
                                        </Button>
                                      </div>
                                    </div>

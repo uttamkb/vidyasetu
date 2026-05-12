@@ -5,7 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Clock, ArrowRight, Plus } from "lucide-react";
+import { Clock, ArrowRight, Plus, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import { GenerateAIModal } from "./generate-ai-modal";
 import { ArchiveButton } from "./archive-button";
@@ -203,6 +203,13 @@ function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
           <div className="flex items-center gap-1.5">
             <div className={`w-2 h-2 rounded-full ${STATUS_DOT[a.status]}`} />
             <span className="text-xs text-muted-foreground">{STATUS_LABEL[a.status]}</span>
+            {isDone && (
+              <Link href={`/assignments/${a.id}?retest=true`}>
+                <Button size="icon" variant="ghost" className="h-7 w-7 text-amber-600 hover:text-amber-700 hover:bg-amber-50" title="Take Retest">
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              </Link>
+            )}
             <ArchiveButton assignmentId={a.id} />
           </div>
         </div>
