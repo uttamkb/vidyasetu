@@ -124,32 +124,39 @@ function masteryDot(score: number): string {
 // ─────────────────────────────────────────
 // Material Card
 // ─────────────────────────────────────────
-function MaterialCard({ material, onReadInline }: {
+function MaterialCard({ material, onReadInline, onWatchVideo }: {
   material: StudyMaterial;
   onReadInline: (m: StudyMaterial) => void;
+  onWatchVideo: (m: StudyMaterial) => void;
 }) {
   const meta = TYPE_META[material.type] ?? TYPE_META["NOTES"];
 
   // Derive thumbnail from YouTube URL when not stored in DB
+  const videoId = material.youtubeUrl ? extractYouTubeId(material.youtubeUrl) : null;
   const thumbnailSrc =
-    material.thumbnailUrl ??
-    (material.youtubeUrl
-      ? (() => {
-          const id = extractYouTubeId(material.youtubeUrl!);
-          return id ? youTubeThumbnailUrl(id, "hqdefault") : null;
-        })()
-      : null);
+    material.thumbnailUrl ||
+    (videoId ? youTubeThumbnailUrl(videoId, "hqdefault") : null);
 
   return (
     <Card className="group hover:shadow-premium transition-all duration-300 border-border/50 hover:-translate-y-1 bg-card/50 backdrop-blur-sm overflow-hidden">
       {/* YouTube thumbnail */}
       {material.type === "VIDEO" && thumbnailSrc && (
-        <div className="relative overflow-hidden aspect-video bg-muted border-b border-border/50">
+        <div 
+          className="relative overflow-hidden aspect-video bg-muted border-b border-border/50 cursor-pointer"
+          onClick={() => {
+            const videoId = extractYouTubeId(material.youtubeUrl || "");
+            if (videoId) onWatchVideo(material);
+            else window.open(material.youtubeUrl!, "_blank");
+          }}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={thumbnailSrc}
             alt={material.title}
             className="object-cover w-full h-full group-hover:scale-110 transition-transform duration-500"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = "https://i.ytimg.com/vi/search/hqdefault.jpg";
+            }}
           />
           <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
             <div className="p-3 rounded-full bg-white/20 backdrop-blur-md border border-white/30">
@@ -186,11 +193,17 @@ function MaterialCard({ material, onReadInline }: {
         {/* Actions */}
         <div className="flex gap-2 mt-2">
           {material.type === "VIDEO" && material.youtubeUrl && (
-            <a href={material.youtubeUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
-              <Button size="sm" className="w-full gap-1.5 font-bold shadow-sm">
-                <Play className="h-3.5 w-3.5" /> Watch
-              </Button>
-            </a>
+            <Button 
+              size="sm" 
+              className="flex-1 gap-1.5 font-bold shadow-sm"
+              onClick={() => {
+                const videoId = extractYouTubeId(material.youtubeUrl || "");
+                if (videoId) onWatchVideo(material);
+                else window.open(material.youtubeUrl!, "_blank");
+              }}
+            >
+              <Play className="h-3.5 w-3.5" /> Watch
+            </Button>
           )}
           {material.type === "PDF" && material.fileUrl && (
             <a href={material.fileUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
@@ -360,17 +373,72 @@ function NotesReader({ material, onClose }: { material: StudyMaterial; onClose: 
 }
 
 // ─────────────────────────────────────────
+// Video Player Modal
+// ─────────────────────────────────────────
+function VideoPlayer({ material, onClose }: { material: StudyMaterial; onClose: () => void }) {
+  const videoId = extractYouTubeId(material.youtubeUrl!);
+  
+  if (!videoId) return null;
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-300">
+      <Card className="bg-card border-border shadow-premium w-full max-w-4xl animate-in zoom-in-95 duration-500 overflow-hidden relative">
+        <div className="flex items-center justify-between p-4 border-b border-border/50 bg-background/50 backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+             <div className="p-2 rounded-lg bg-red-500/10">
+               <Video className="h-5 w-5 text-red-500" />
+             </div>
+             <div>
+               <h2 className="font-heading font-bold text-base leading-none">{material.title}</h2>
+               <p className="text-[10px] text-muted-foreground mt-1 uppercase tracking-wider font-bold">Video Lesson</p>
+             </div>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-muted transition-colors">
+            <X className="h-5 w-5" />
+          </Button>
+        </div>
+        
+        <div className="aspect-video bg-black relative group">
+          <iframe
+            src={`https://www.youtube.com/embed/${videoId}?autoplay=1&modestbranding=1&rel=0`}
+            title={material.title}
+            className="absolute inset-0 w-full h-full"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+          />
+        </div>
+
+        <div className="p-4 bg-muted/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <p className="text-xs text-muted-foreground line-clamp-1 flex-1 italic">
+            {material.description || `Lecture for ${material.topic?.name || 'this topic'}`}
+          </p>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <a href={material.youtubeUrl!} target="_blank" rel="noopener noreferrer" className="flex-1 sm:flex-none">
+              <Button variant="outline" size="sm" className="w-full gap-2 font-bold border-border/50 hover:bg-background">
+                <ExternalLink className="h-3.5 w-3.5" /> Open in YouTube
+              </Button>
+            </a>
+            <Button variant="secondary" size="sm" onClick={onClose} className="flex-1 sm:flex-none font-bold">
+              Close
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────
 // Topic Detail Panel (right side)
 // ─────────────────────────────────────────
-function TopicDetailPanel({
-  topic,
-  subjectId,
-  onBack,
-}: {
+interface TopicDetailPanelProps {
   topic: TopicSummary;
   subjectId: string;
   onBack: () => void;
-}) {
+  onWatchVideo: (m: StudyMaterial) => void;
+}
+
+function TopicDetailPanel({ topic, subjectId, onBack, onWatchVideo }: TopicDetailPanelProps) {
   const [materials, setMaterials] = useState<StudyMaterial[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -417,6 +485,23 @@ function TopicDetailPanel({
               </span>
             </div>
           </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => {
+              setLoading(true);
+              fetch(`/api/study-materials?topicId=${topic.id}&refresh=true`)
+                .then((r) => r.json())
+                .then((d) => setMaterials(d.materials ?? []))
+                .catch(console.error)
+                .finally(() => setLoading(false));
+            }}
+            disabled={loading}
+            className="shrink-0 gap-2 border-primary/20 hover:bg-primary/5 text-primary font-bold shadow-sm"
+          >
+            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            Upgrade
+          </Button>
         </div>
 
         {/* Search + type filter */}
@@ -473,7 +558,12 @@ function TopicDetailPanel({
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {filtered.map((m) => (
-              <MaterialCard key={m.id} material={m} onReadInline={setInlineNote} />
+              <MaterialCard 
+                key={m.id} 
+                material={m} 
+                onReadInline={setInlineNote} 
+                onWatchVideo={onWatchVideo}
+              />
             ))}
           </div>
         )}
@@ -572,6 +662,7 @@ export function CurriculumBrowser({ subjects }: CurriculumBrowserProps) {
   const [chapters, setChapters] = useState<ChapterSummary[]>([]);
   const [loadingChapters, setLoadingChapters] = useState(false);
   const [selectedTopic, setSelectedTopic] = useState<TopicSummary | null>(null);
+  const [activeVideo, setActiveVideo] = useState<StudyMaterial | null>(null);
 
   useEffect(() => {
     if (!activeSubjectId) return;
@@ -608,6 +699,7 @@ export function CurriculumBrowser({ subjects }: CurriculumBrowserProps) {
 
   return (
     <div className="space-y-4">
+      {activeVideo && <VideoPlayer material={activeVideo} onClose={() => setActiveVideo(null)} />}
       {/* Header */}
       <div className="print:hidden">
         <h1 className="text-3xl font-bold tracking-tight">Study Materials</h1>
@@ -674,6 +766,7 @@ export function CurriculumBrowser({ subjects }: CurriculumBrowserProps) {
                 topic={selectedTopic}
                 subjectId={activeSubjectId}
                 onBack={() => setSelectedTopic(null)}
+                onWatchVideo={setActiveVideo}
               />
             </div>
           ) : (

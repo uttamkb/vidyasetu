@@ -18,7 +18,7 @@
 import { prisma } from "@/lib/db";
 import { genAI, callGemini } from "@/lib/gemini";
 import { QuestionType, BloomLevel, StudyMaterial } from "@prisma/client";
-import { fetchYouTubeMeta } from "@/lib/youtube";
+import { fetchYouTubeMeta, youTubeThumbnailUrl } from "@/lib/youtube";
 
 export const LATEST_CONTENT_VERSION = "premium-v1";
 
@@ -144,12 +144,16 @@ Generate ALL 7 sections below. Return a JSON object in this EXACT format:
     { "term": "Term", "definition": "One-line definition." }
   ],
   "youtubeVideos": [
-    { "videoId": "YouTube Video ID (e.g. dQw4w9WgXcQ)", "title": "Clear, descriptive video title" }
+    { "videoId": "YouTube Video ID 1", "title": "Clear, descriptive video title 1" },
+    { "videoId": "YouTube Video ID 2", "title": "Clear, descriptive video title 2" },
+    { "videoId": "YouTube Video ID 3", "title": "Clear, descriptive video title 3" },
+    { "videoId": "YouTube Video ID 4", "title": "Clear, descriptive video title 4" },
+    { "videoId": "YouTube Video ID 5", "title": "Clear, descriptive video title 5" }
   ]
 }
 
 IMPORTANT:
-- FOR YOUTUBE: Provide exactly 2 real, high-quality YouTube Video IDs that are highly relevant to this specific topic from reputable NCERT channels (e.g. Khan Academy India, Magnet Brains, BYJU'S). Do NOT hallucinate IDs; if unsure, omit.
+- FOR YOUTUBE: Provide exactly 5 real, high-quality, PUBLICLY available YouTube Video IDs. Prioritize popular videos (high views/likes) from reputable NCERT channels (e.g. Khan Academy India, Magnet Brains, ExamFear Education, LearnoHub). Ensure they are strictly relevant to the topic and NOT behind any paywall or private link. Do NOT hallucinate IDs; we will verify their existence before seeding.
 - STRICT LENGTH LIMIT: Absolute maximum of 2 most critical items per section. Pick ONLY the highest yield, most frequently tested concepts.
 - EXTREMELY BITE-SIZED: Keep explanations under 15 words. Use punchy phrasing. No fluff.
 - VISUAL & ENGAGING: Liberally use emojis (⚠️ for mistakes, 💡 for tips, 🔥 for hot topics).
@@ -331,41 +335,94 @@ export async function saveContentPack(topicId: string, pack: ContentPack) {
     },
   });
 
-  // Save Verified YouTube Reference Links
+  // Save Verified YouTube Reference Links (Strict Verification)
   let videosCreated = 0;
+  
+  // Clear old AI videos for this topic to prevent accumulation of dead links/old search links
+  await prisma.studyMaterial.deleteMany({
+    where: {
+      topicId,
+      type: "VIDEO",
+      isAIGenerated: true
+    }
+  });
+
   if (pack.youtubeVideos && pack.youtubeVideos.length > 0) {
+    console.log(`[ContentCurator] Processing ${pack.youtubeVideos.length} YouTube candidates...`);
+    // We want to find up to 2 valid videos from the candidates
     for (const v of pack.youtubeVideos) {
+      if (videosCreated >= 2) break; // We have enough valid videos
       if (!v.videoId) continue;
       
       const videoUrl = `https://www.youtube.com/watch?v=${v.videoId}`;
-      const meta = await fetchYouTubeMeta(videoUrl);
+      console.log(`[ContentCurator] Verifying candidate: ${v.videoId} (${v.title})`);
       
-      if (meta) {
-        await prisma.studyMaterial.upsert({
-          where: { id: `ai-video-${topicId}-${v.videoId}` },
-          create: {
-            id: `ai-video-${topicId}-${v.videoId}`,
-            title: meta.title || v.title || `Video: ${topic.name}`,
-            description: `NCERT video lecture for ${topic.name} ${versionMarker}`,
-            type: "VIDEO",
-            youtubeUrl: videoUrl,
-            thumbnailUrl: meta.thumbnailUrl,
-            subjectId: subject.id,
-            chapterId: chapter.id,
-            topicId,
-            isAIGenerated: true,
-            aiGeneratedAt: new Date(),
-            isPublished: true,
-          },
-          update: {
-            youtubeUrl: videoUrl,
-            thumbnailUrl: meta.thumbnailUrl,
-            aiGeneratedAt: new Date(),
-          }
-        });
-        videosCreated++;
+      try {
+        const meta = await fetchYouTubeMeta(videoUrl);
+        
+        if (meta) {
+          console.log(`[ContentCurator] ✅ Verified: ${meta.title}`);
+          // Only save if verification succeeded
+          await prisma.studyMaterial.upsert({
+            where: { id: `ai-video-${topicId}-${v.videoId}` },
+            create: {
+              id: `ai-video-${topicId}-${v.videoId}`,
+              title: meta.title || v.title || `Video: ${topic.name}`,
+              description: `NCERT video lecture for ${topic.name} [Version: ${LATEST_CONTENT_VERSION}]`,
+              type: "VIDEO",
+              youtubeUrl: videoUrl,
+              thumbnailUrl: meta.thumbnailUrl,
+              subjectId: subject.id,
+              chapterId: chapter.id,
+              topicId,
+              isAIGenerated: true,
+              aiGeneratedAt: new Date(),
+              isPublished: true,
+            },
+            update: {
+              youtubeUrl: videoUrl,
+              thumbnailUrl: meta.thumbnailUrl,
+              aiGeneratedAt: new Date(),
+            }
+          });
+          videosCreated++;
+        } else {
+          console.log(`[ContentCurator] ❌ Verification FAILED for ${v.videoId}.`);
+        }
+      } catch (err) {
+        console.warn(`[ContentCurator] ⚠️ Error verifying video ${v.videoId}:`, err);
       }
     }
+  }
+  console.log(`[ContentCurator] Successfully seeded ${videosCreated} verified videos.`);
+
+  // FALLBACK: If no videos could be verified, seed a Search Link so the user isn't left with nothing
+  if (videosCreated === 0) {
+    console.log(`[ContentCurator] ⚠️ No videos verified. Seeding a Search Fallback.`);
+    const searchQuery = `${subject.name} ${topic.name} class ${subject.grade} NCERT`;
+    const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`;
+    
+    await prisma.studyMaterial.upsert({
+      where: { id: `ai-video-search-${topicId}` },
+      create: {
+        id: `ai-video-search-${topicId}`,
+        title: `Watch Videos: ${topic.name}`,
+        description: `Search results for ${topic.name} on YouTube. [Version: ${LATEST_CONTENT_VERSION}]`,
+        type: "VIDEO",
+        youtubeUrl: searchUrl,
+        thumbnailUrl: "https://img.youtube.com/vi/search/0.jpg", // Generic search icon placeholder
+        subjectId: subject.id,
+        chapterId: chapter.id,
+        topicId,
+        isAIGenerated: true,
+        aiGeneratedAt: new Date(),
+        isPublished: true,
+      },
+      update: {
+        youtubeUrl: searchUrl,
+        aiGeneratedAt: new Date(),
+      }
+    });
   }
 
   // Seed questions into the question bank

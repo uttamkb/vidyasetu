@@ -25,6 +25,7 @@ export async function GET(req: NextRequest) {
   const subjectId = searchParams.get("subjectId");
   const type = searchParams.get("type");
   const query = searchParams.get("q");
+  const forceRefresh = searchParams.get("refresh") === "true";
 
   try {
     const user = await prisma.user.findUniqueOrThrow({
@@ -76,7 +77,7 @@ export async function GET(req: NextRequest) {
     // JUST-IN-TIME (JIT) Content Generation
     // If a specific topic was requested but has no materials or outdated materials, autonomously generate them.
     const isOutdated = isContentOutdated(materials);
-    if (topicId && isOutdated && !type && !query) {
+    if (topicId && (isOutdated || forceRefresh) && !type && !query) {
       console.log(`[API] Topic ${topicId} content is missing or outdated. Triggering AI Curator...`);
       try {
         const pack = await generateTopicContentPack(topicId);

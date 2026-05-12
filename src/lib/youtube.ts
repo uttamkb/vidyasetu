@@ -11,28 +11,59 @@ export async function fetchYouTubeMeta(youtubeUrl: string): Promise<{
   thumbnailUrl: string;
   title: string;
 } | null> {
+  const videoId = extractYouTubeId(youtubeUrl);
+  
+  // 1. Try Official YouTube oEmbed
   try {
-    const url = new URL(
-      `https://www.youtube.com/oembed?url=${encodeURIComponent(youtubeUrl)}&format=json`
-    );
-    const res = await fetch(url.toString(), {
-      next: { revalidate: 86400 }, // cache for 24h in Next.js
+    const url = `https://www.youtube.com/oembed?url=${encodeURIComponent(youtubeUrl)}&format=json`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+      next: { revalidate: 3600 } // Cache for 1 hour
     });
-
-    if (!res.ok) return null;
-
-    const data = (await res.json()) as {
-      thumbnail_url: string;
-      title: string;
-    };
-
-    return {
-      thumbnailUrl: data.thumbnail_url,
-      title: data.title,
-    };
-  } catch {
-    return null;
+    
+    if (res.ok) {
+      const data = await res.json();
+      return { thumbnailUrl: data.thumbnail_url, title: data.title };
+    }
+  } catch (e) {
+    console.warn(`[YouTubeMeta] Primary oEmbed failed for ${youtubeUrl}`);
   }
+
+  // 2. Try NoEmbed Proxy (Often more resilient to rate limits/UA blocks)
+  try {
+    const url = `https://noembed.com/embed?url=${encodeURIComponent(youtubeUrl)}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      if (!data.error) {
+        return { 
+          thumbnailUrl: data.thumbnail_url || youTubeThumbnailUrl(videoId || ""), 
+          title: data.title || "" 
+        };
+      }
+    }
+  } catch (e) {
+    console.warn(`[YouTubeMeta] NoEmbed proxy failed for ${youtubeUrl}`);
+  }
+
+  // 3. Last Resort: Ping Thumbnail (Verifies video existence)
+  if (videoId) {
+    try {
+      const thumbUrl = youTubeThumbnailUrl(videoId, "hqdefault");
+      const res = await fetch(thumbUrl, { method: "HEAD" });
+      if (res.ok) {
+        console.log(`[YouTubeMeta] Verified existence via thumbnail for ${videoId}`);
+        return {
+          thumbnailUrl: thumbUrl,
+          title: "", // Caller should fallback to their own title
+        };
+      }
+    } catch (e) {
+      console.warn(`[YouTubeMeta] Thumbnail ping failed for ${videoId}`);
+    }
+  }
+
+  return null;
 }
 
 /**

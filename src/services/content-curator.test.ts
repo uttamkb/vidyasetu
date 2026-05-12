@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateTopicContentPack, saveContentPack, type ContentPack } from "./content-curator";
+import { generateTopicContentPack, saveContentPack, isContentOutdated, LATEST_CONTENT_VERSION, type ContentPack } from "./content-curator";
 import { prisma } from "@/lib/db";
 import { callGemini } from "@/lib/gemini";
 
@@ -11,6 +11,7 @@ vi.mock("@/lib/db", () => ({
     },
     studyMaterial: {
       upsert: vi.fn(),
+      deleteMany: vi.fn(),
     },
     subtopic: {
       findMany: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/youtube", () => ({
   fetchYouTubeMeta: vi.fn(),
   extractYouTubeId: vi.fn((url) => url.split("v=")[1] || null),
+  youTubeThumbnailUrl: vi.fn((id) => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`),
 }));
 
 vi.mock("@/lib/gemini", () => ({
@@ -115,4 +117,86 @@ describe("content-curator", () => {
     // Verify question bank seeding
     expect(prisma.question.create).toHaveBeenCalled();
   });
+
+  it("identifies outdated content correctly", () => {
+    // Case 1: No materials
+    expect(isContentOutdated([])).toBe(true);
+
+    // Case 2: No PLATFORM_CONTENT
+    expect(isContentOutdated([{ type: "VIDEO" } as any])).toBe(true);
+
+    // Case 3: Wrong version marker
+    expect(isContentOutdated([{ type: "PLATFORM_CONTENT", description: "Old v0" } as any])).toBe(true);
+
+    // Case 4: Correct version marker
+    expect(isContentOutdated([{ 
+      type: "PLATFORM_CONTENT", 
+      description: `Premium Notes [Version: ${LATEST_CONTENT_VERSION}]` 
+    } as any])).toBe(false);
+  });
+
+  it("handles empty sections in saveContentPack", async () => {
+    (prisma.topic.findUniqueOrThrow as any).mockResolvedValue(mockTopic);
+    (prisma.subtopic.findMany as any).mockResolvedValue([]);
+    (prisma.studyMaterial.upsert as any).mockResolvedValue({});
+    (prisma.question.deleteMany as any).mockResolvedValue({});
+
+    const emptyPack: ContentPack = {
+      coreConcepts: [],
+      microTopics: [],
+      explanations: [],
+      examples: [],
+      misconceptions: [],
+      revisionSheet: { keyFormulas: [], keyTerms: [], mnemonics: [] },
+      selfAssessmentQuestions: [],
+      keyTakeaways: [],
+      terminology: [],
+      youtubeVideos: [],
+    };
+
+    const result = await saveContentPack(mockTopicId, emptyPack);
+    expect(result.materialsCreated).toBe(1);
+    expect(prisma.question.create).not.toHaveBeenCalled();
+  });
+
+  it("handles keyDates in revision sheet", async () => {
+    (prisma.topic.findUniqueOrThrow as any).mockResolvedValue(mockTopic);
+    (prisma.studyMaterial.upsert as any).mockResolvedValue({});
+    
+    const historyPack = {
+      ...mockPack,
+      revisionSheet: { ...mockPack.revisionSheet, keyDates: ["1947: Independence"] }
+    };
+
+    await saveContentPack(mockTopicId, historyPack);
+    expect(prisma.studyMaterial.upsert).toHaveBeenCalled();
+  });
+
+  it("seeds youtube video only if meta fetch succeeds (strict mode)", async () => {
+    (prisma.topic.findUniqueOrThrow as any).mockResolvedValue(mockTopic);
+    (prisma.studyMaterial.upsert as any).mockResolvedValue({});
+    const { fetchYouTubeMeta } = await import("@/lib/youtube");
+    
+    const multiVideoPack = {
+      ...mockPack,
+      youtubeVideos: [
+        { videoId: "invalid-id", title: "Broken" },
+        { videoId: "dQw4w9WgXcQ", title: "Valid" }
+      ]
+    };
+
+    // Mock fetchYouTubeMeta to fail for the first ID and succeed for the second
+    (fetchYouTubeMeta as any)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ thumbnailUrl: "thumb", title: "Video Title" });
+
+    await saveContentPack(mockTopicId, multiVideoPack);
+    
+    // Should have been called for notes (1) + only 1 valid video (1) = 2 times
+    expect(prisma.studyMaterial.upsert).toHaveBeenCalledTimes(2);
+    expect(prisma.studyMaterial.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: `ai-video-${mockTopicId}-dQw4w9WgXcQ` }
+    }));
+  });
 });
+

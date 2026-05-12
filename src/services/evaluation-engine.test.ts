@@ -62,13 +62,13 @@ describe("evaluation-engine", () => {
       id: "q1",
       type: "MCQ",
       subtopicId: "st-1",
-      content: { question: "...", correctAnswer: "B", maxMarks: 5, explanation: "..." },
+      content: { question: "...", options: ["A", "B", "C", "D"], correctAnswer: "B", maxMarks: 5, explanation: "..." },
     },
     {
       id: "q2",
       type: "SHORT_ANSWER",
       subtopicId: "st-2",
-      content: { question: "Why does apple fall?", correctAnswer: "Gravity", maxMarks: 5, explanation: "..." },
+      content: { question: "Why does apple fall?", correctAnswer: "Gravity", maxMarks: 5, explanation: "...", keyPoints: ["Force", "Mass"] },
     },
   ];
 
@@ -139,4 +139,118 @@ describe("evaluation-engine", () => {
 
     await expect(evaluateSubmission(mockSubmissionId)).rejects.toThrow("Submission already evaluated.");
   });
+
+  it("handles multimodal evaluation (images)", async () => {
+    const multimodalSubmission = {
+      ...mockSubmission,
+      answers: [{ questionId: "q2", questionIndex: 1, userAnswer: "data:image/png;base64,abcdef" }],
+    };
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue(multimodalSubmission);
+    (prisma.question.findMany as any).mockResolvedValue([mockQuestions[1]]);
+
+    await evaluateSubmission(mockSubmissionId);
+    
+    // Check if callGemini was called with multimodal prompt format
+    expect(callGemini).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.arrayContaining([expect.anything(), expect.objectContaining({ inlineData: expect.anything() })]),
+      expect.anything()
+    );
+  });
+
+  it("updates existing mastery score instead of creating", async () => {
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue(mockSubmission);
+    (prisma.question.findMany as any).mockResolvedValue(mockQuestions);
+    
+    // Existing mastery found
+    (prisma.userMastery.findUnique as any).mockResolvedValue({ id: "um-1", masteryScore: 50 });
+
+    await evaluateSubmission(mockSubmissionId);
+    
+    expect(prisma.userMastery.update).toHaveBeenCalled();
+    expect(prisma.userMastery.create).not.toHaveBeenCalled();
+  });
+
+  it("skips leaderboard update if user opted out", async () => {
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSubmission,
+      user: { id: "user-1", leaderboardOptIn: false },
+    });
+    (prisma.user.findUnique as any).mockResolvedValue({ leaderboardOptIn: false });
+
+    await evaluateSubmission(mockSubmissionId);
+    
+    expect(prisma.leaderboardEntry.upsert).not.toHaveBeenCalled();
+  });
+
+  it("uses inline assignment questions if questionId is missing", async () => {
+    const inlineSubmission = {
+      ...mockSubmission,
+      answers: [{ questionIndex: 0, userAnswer: "Correct" }],
+      assignment: {
+        ...mockSubmission.assignment,
+        questions: [{ type: "MCQ", question: "Inline?", correctAnswer: "Correct", marks: 5 }]
+      }
+    };
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue(inlineSubmission);
+    (prisma.question.findMany as any).mockResolvedValue([]);
+
+    const result = await evaluateSubmission(mockSubmissionId);
+    expect(result.totalScore).toBe(5);
+  });
+
+  it("calculates growth score for MEDIUM difficulty", async () => {
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSubmission,
+      assignment: { ...mockSubmission.assignment, difficulty: "MEDIUM" },
+    });
+    (prisma.user.findUnique as any).mockResolvedValue({ leaderboardOptIn: true });
+    (prisma.question.findMany as any).mockResolvedValue(mockQuestions);
+    await evaluateSubmission(mockSubmissionId);
+    expect(prisma.leaderboardEntry.upsert).toHaveBeenCalled();
+  });
+
+  it("calculates growth score for EASY difficulty", async () => {
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSubmission,
+      assignment: { ...mockSubmission.assignment, difficulty: "EASY" },
+    });
+    (prisma.user.findUnique as any).mockResolvedValue({ leaderboardOptIn: true });
+    (prisma.question.findMany as any).mockResolvedValue(mockQuestions);
+    await evaluateSubmission(mockSubmissionId);
+    expect(prisma.leaderboardEntry.upsert).toHaveBeenCalled();
+  });
+
+  it("handles incorrect answers and mastery score penalty", async () => {
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSubmission,
+      answers: [{ questionId: "q1", questionIndex: 0, userAnswer: "WRONG" }],
+    });
+    (prisma.question.findMany as any).mockResolvedValue([mockQuestions[0]]);
+    (prisma.userMastery.findUnique as any).mockResolvedValue({ id: "um-1", masteryScore: 50 });
+
+    await evaluateSubmission(mockSubmissionId);
+    
+    expect(prisma.userMastery.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ masteryScore: 47 }) // 50 - 3
+    }));
+  });
+
+  it("handles new mastery for incorrect answer", async () => {
+    (prisma.submission.findUniqueOrThrow as any).mockResolvedValue({
+      ...mockSubmission,
+      answers: [{ questionId: "q1", questionIndex: 0, userAnswer: "WRONG" }],
+    });
+    (prisma.question.findMany as any).mockResolvedValue([mockQuestions[0]]);
+    (prisma.userMastery.findUnique as any).mockResolvedValue(null);
+
+    await evaluateSubmission(mockSubmissionId);
+    
+    expect(prisma.userMastery.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ masteryScore: 5 })
+    }));
+  });
 });
+
+
+
