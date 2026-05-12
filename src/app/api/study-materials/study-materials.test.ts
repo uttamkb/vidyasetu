@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { GET } from "./route";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { generateTopicContentPack, saveContentPack } from "@/services/content-curator";
+import { generateTopicContentPack, saveContentPack, isContentOutdated } from "@/services/content-curator";
 import { NextRequest } from "next/server";
 
 vi.mock("@/lib/auth", () => ({
@@ -30,6 +30,7 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/services/content-curator", () => ({
   generateTopicContentPack: vi.fn(),
   saveContentPack: vi.fn(),
+  isContentOutdated: vi.fn(),
 }));
 
 describe("GET /api/study-materials", () => {
@@ -56,6 +57,7 @@ describe("GET /api/study-materials", () => {
 
     (generateTopicContentPack as any).mockResolvedValue({ coreConcepts: [] });
     (saveContentPack as any).mockResolvedValue({});
+    (isContentOutdated as any).mockReturnValue(true);
 
     const req = new NextRequest("http://localhost/api/study-materials?topicId=topic-1");
     const res = await GET(req);
@@ -76,6 +78,7 @@ describe("GET /api/study-materials", () => {
     (prisma.studyMaterial.findMany as any).mockResolvedValue([
       { id: "broken-1", type: "PLATFORM_CONTENT", content: "Study notes for Topic X", title: "Broken", subject: {}, chapter: {}, topic: {} }
     ]);
+    (isContentOutdated as any).mockReturnValue(true);
 
     const req = new NextRequest("http://localhost/api/study-materials?topicId=topic-1");
     await GET(req);

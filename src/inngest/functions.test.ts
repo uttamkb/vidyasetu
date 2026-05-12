@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { monthlySeeder, seedCurriculumStructure, seedTopicContent } from "./functions";
 import { prisma } from "@/lib/db";
 import { CurriculumResearcher } from "@/services/curriculum-researcher";
-import { generateTopicContentPack, saveContentPack } from "@/services/content-curator";
+import { generateTopicContentPack, saveContentPack, isContentOutdated } from "@/services/content-curator";
 
 vi.mock("@/lib/db", () => ({
   prisma: {
@@ -20,7 +20,9 @@ vi.mock("@/services/curriculum-researcher", () => ({
 
 vi.mock("@/services/content-curator", () => ({
   generateTopicContentPack: vi.fn(),
-  saveContentPack: vi.fn()
+  saveContentPack: vi.fn(),
+  isContentOutdated: vi.fn(),
+  LATEST_CONTENT_VERSION: "premium-v1"
 }));
 
 // Helper to mock Inngest step context
@@ -42,8 +44,9 @@ describe("Inngest Functions", () => {
       ]);
       // Mock empty topics
       vi.mocked(prisma.topic.findMany).mockResolvedValue([
-        { id: "top-1", name: "Algebra" } as any
+        { id: "top-1", name: "Algebra", studyMaterials: [] } as any
       ]);
+      vi.mocked(isContentOutdated).mockReturnValue(true);
 
       const mockStep = createMockStep();
       
@@ -71,7 +74,10 @@ describe("Inngest Functions", () => {
 
     it("should not queue if no empty subjects or topics exist", async () => {
       vi.mocked(prisma.subject.findMany).mockResolvedValue([]);
-      vi.mocked(prisma.topic.findMany).mockResolvedValue([]);
+      vi.mocked(prisma.topic.findMany).mockResolvedValue([
+        { id: "top-existing", name: "Geometry", studyMaterials: [{ id: "mat-1" }] } as any
+      ]);
+      vi.mocked(isContentOutdated).mockReturnValue(false);
 
       const mockStep = createMockStep();
       const handler = (monthlySeeder as any).fn || (monthlySeeder as any).invoke;
@@ -139,6 +145,7 @@ describe("Inngest Functions", () => {
       const mockStep = createMockStep();
       const handler = (seedTopicContent as any).fn || (seedTopicContent as any).invoke;
       
+      vi.mocked(isContentOutdated).mockReturnValue(false);
       await handler({ event: { data: { topicId: "top-1" } }, step: mockStep });
       
       expect(generateTopicContentPack).not.toHaveBeenCalled();
@@ -146,6 +153,7 @@ describe("Inngest Functions", () => {
 
     it("should generate and save content pack if topic is empty", async () => {
       vi.mocked(prisma.studyMaterial.findMany).mockResolvedValue([]);
+      vi.mocked(isContentOutdated).mockReturnValue(true);
       
       const mockPack = { topicId: "top-1", materials: [] };
       vi.mocked(generateTopicContentPack).mockResolvedValue(mockPack as any);
