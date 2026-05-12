@@ -75,19 +75,6 @@ describe("Submissions API", () => {
       expect(data.totalScore).toBe(8);
       expect(evaluateSubmission).toHaveBeenCalledWith("sub-1");
     });
-
-    it("returns 409 if already submitted", async () => {
-      (auth as any).mockResolvedValue({ user: { id: "user-1" } });
-      (prisma.assignment.findUniqueOrThrow as any).mockResolvedValue({ maxMarks: 10 });
-      (prisma.submission.findFirst as any).mockResolvedValue({ id: "existing-sub" });
-
-      const req = new NextRequest("http://localhost/api/submissions", {
-        method: "POST",
-        body: JSON.stringify(mockBody),
-      });
-      const res = await POST(req);
-      expect(res.status).toBe(409);
-    });
   });
 
   describe("GET /api/submissions", () => {

@@ -44,6 +44,7 @@ export async function GET(
       feedback: string;
       correction: string;
       explanation: string;
+      markingBreakdown?: any[];
     }>;
 
     const questionIds = answers.map((a) => a.questionId);
@@ -70,6 +71,10 @@ export async function GET(
         options?: string[];
         correctAnswer: string;
         maxMarks: number;
+        examWeightage?: string;
+        sourcePattern?: string;
+        conceptTag?: string;
+        keyPoints?: string[];
       } | undefined;
 
       return {
@@ -84,6 +89,11 @@ export async function GET(
         feedback: a.feedback,
         correction: a.correction,
         explanation: a.explanation,
+        markingBreakdown: a.markingBreakdown,
+        examWeightage: content?.examWeightage,
+        sourcePattern: content?.sourcePattern,
+        conceptTag: content?.conceptTag,
+        keyPoints: content?.keyPoints,
         type: q?.type,
         subtopicName: q?.subtopic?.name,
         topicName: q?.subtopic?.topic?.name,

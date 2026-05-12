@@ -16,6 +16,7 @@ async function getAssignment(id: string, userId: string) {
       subject: true,
       submissions: {
         where: { userId },
+        orderBy: { submittedAt: 'desc' },
       },
     },
   });
@@ -28,11 +29,20 @@ async function getAssignment(id: string, userId: string) {
   };
 }
 
-export default async function AssignmentDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AssignmentDetailPage({ 
+  params,
+  searchParams, 
+}: { 
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   const session = await auth();
   if (!session?.user?.id) redirect("/login");
 
-  const { id } = await params;
+  const [resolvedParams, resolvedSearchParams] = await Promise.all([params, searchParams]);
+  const { id } = resolvedParams;
+  const isRetest = resolvedSearchParams.retest === "true";
+  
   const assignment = await getAssignment(id, session.user.id);
 
   if (!assignment) {
@@ -92,7 +102,7 @@ export default async function AssignmentDetailPage({ params }: { params: Promise
         </CardContent>
       </Card>
 
-      {assignment.submission ? (
+      {assignment.submission && !isRetest ? (
         <Card className="bg-green-50 dark:bg-green-950">
           <CardHeader>
             <CardTitle>Already Submitted</CardTitle>
@@ -109,9 +119,16 @@ export default async function AssignmentDetailPage({ params }: { params: Promise
                 {Math.round((assignment.submission.totalScore / assignment.maxMarks) * 100)}% Score
               </p>
             </div>
-            <Link href={`/submissions/${assignment.submission.id}`}>
-              <Button className="w-full">View Detailed Feedback</Button>
-            </Link>
+            <div className="flex flex-col gap-2">
+              <Link href={`/submissions/${assignment.submission.id}`}>
+                <Button className="w-full">View Detailed Feedback</Button>
+              </Link>
+              <Link href={`/assignments/${assignment.id}?retest=true`}>
+                <Button variant="outline" className="w-full bg-white dark:bg-black text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900 border-green-200 dark:border-green-800">
+                  Take Retest
+                </Button>
+              </Link>
+            </div>
           </CardContent>
         </Card>
       ) : (

@@ -22,6 +22,13 @@ interface EvaluatedAnswer {
   feedback: string;
   correction: string;
   explanation: string;
+  markingBreakdown?: Array<{
+    component: string;
+    marks: number;
+    maxMarks: number;
+    status: 'FULL' | 'PARTIAL' | 'NONE';
+    reason?: string;
+  }>;
 }
 
 async function getSubmission(id: string, userId: string) {
@@ -29,7 +36,7 @@ async function getSubmission(id: string, userId: string) {
     where: { id, userId },
     include: {
       assignment: {
-        include: { subject: true },
+        include: { subject: true, chapter: true },
       },
     },
   });
@@ -50,7 +57,27 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
     notFound();
   }
 
-  const questions = submission.assignment.questions as any[];
+  // Handle AI-generated vs Standard assignments
+  const questionPointers = submission.assignment.questions as any[];
+  const questionIds = questionPointers.map(q => q.questionId).filter(Boolean);
+
+  // Fetch actual question content from DB
+  const dbQuestions = await prisma.question.findMany({
+    where: { id: { in: questionIds } }
+  });
+  const qMap = Object.fromEntries(dbQuestions.map(q => [q.id, q]));
+
+  // Map back to ordered list
+  const fullQuestions = questionPointers.map(p => {
+    const q = qMap[p.questionId];
+    if (!q) return null;
+    return {
+      ...q,
+      content: q.content as any,
+      orderIndex: p.orderIndex
+    };
+  }).filter(Boolean) as any[];
+
   const answers = submission.answers as unknown as EvaluatedAnswer[];
   const percentage = Math.round((submission.totalScore / submission.maxMarks) * 100);
 
@@ -122,29 +149,53 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
       <div>
         <h2 className="text-xl font-semibold mb-4">Question-wise Breakdown</h2>
         <div className="space-y-4">
-          {questions.map((question: any, index: number) => {
-            const answer = answers.find((a: any) => a.questionIndex === index);
+          {fullQuestions.map((question: any, index: number) => {
+            const answer = answers.find((a: any) => a.questionId === question.id || a.questionIndex === index);
             const score = answer ? answer.marksAwarded : 0;
-            const maxMarks = question.marks || question.maxMarks || 1;
+            const maxMarks = question.content.maxMarks || 1;
 
             const isCorrect = score === maxMarks;
             const isPartial = score > 0 && score < maxMarks;
+
+            // For MCQs, find the selected option text and its label
+            let studentOptionText = "";
+            let studentLabel = "";
+            
+            if (question.type === "MCQ" && question.content.options && answer?.userAnswer) {
+              const rawAns = String(answer.userAnswer);
+              const options = question.content.options as string[];
+              
+              // Case 1: Answer is already a label (Old Style)
+              if (rawAns.length === 1 && rawAns.toUpperCase() >= "A" && rawAns.toUpperCase() <= "D") {
+                studentLabel = rawAns.toUpperCase();
+                const optIdx = studentLabel.charCodeAt(0) - 65;
+                studentOptionText = options[optIdx] || "";
+              } 
+              // Case 2: Answer is the full text (New Style)
+              else {
+                studentOptionText = rawAns;
+                const optIdx = options.findIndex(opt => opt.trim().toLowerCase() === rawAns.trim().toLowerCase());
+                if (optIdx !== -1) {
+                  studentLabel = String.fromCharCode(65 + optIdx);
+                }
+              }
+            }
 
             return (
               <Card key={index}>
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-4">
                     <div>
-                      <CardTitle className="text-base font-medium">
-                        Q{index + 1}. {question.question}
+                      <CardTitle className="text-lg font-bold text-slate-900 leading-tight">
+                        Q{index + 1}. {question.content.question}
                       </CardTitle>
-                      <CardDescription>
+                      <CardDescription className="mt-1 font-medium text-slate-500">
                         {question.type === "MCQ"
                           ? "Multiple Choice"
                           : question.type === "SHORT_ANSWER"
                           ? "Short Answer"
                           : "Long Answer"}{" "}
-                        | {question.marks} marks
+                        | {maxMarks} marks
                       </CardDescription>
                     </div>
                     <div className="flex items-center gap-2">
@@ -161,26 +212,74 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="space-y-3">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Your Answer:</p>
-                    <p className="text-sm mt-1">{answer?.userAnswer ? String(answer.userAnswer) : "Not answered"}</p>
-                  </div>
-                  <Separator />
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">Correct Answer:</p>
-                    <p className="text-sm mt-1">{question.correctAnswer}</p>
+                <CardContent className="space-y-4 pt-4">
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 print:bg-white print:border-slate-200">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Your Answer</p>
+                      <p className="text-sm font-bold text-slate-900">
+                        {answer?.userAnswer 
+                          ? (studentLabel ? `${studentLabel}. ${studentOptionText}` : String(answer.userAnswer)) 
+                          : "Not answered"}
+                      </p>
+                    </div>
+                    <div className="p-4 rounded-xl bg-green-50 border border-green-100 print:bg-white print:border-slate-200">
+                      <p className="text-[10px] uppercase tracking-wider font-bold text-green-700 mb-1">Correct Answer</p>
+                      <p className="text-sm font-bold text-green-900">{question.content.correctAnswer}</p>
+                    </div>
                   </div>
                   {answer?.feedback && (
                     <>
                       <Separator />
-                      <div className="bg-muted/50 p-3 rounded-md">
-                        <p className="text-sm font-medium text-muted-foreground mb-1 flex items-center gap-2">
-                          <Sparkles className="h-4 w-4 text-primary" /> AI Evaluation:
-                        </p>
-                        <p className="text-sm">{answer.feedback}</p>
-                        {answer.correction && <p className="text-sm text-amber-600 mt-2">Correction: {answer.correction}</p>}
-                        {answer.explanation && <p className="text-sm text-blue-600 mt-2">Explanation: {answer.explanation}</p>}
+                      <div className="bg-muted/50 p-4 rounded-xl border border-primary/5 space-y-4">
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm font-bold text-primary flex items-center gap-2">
+                            <Sparkles className="h-4 w-4" /> Examiner's Feedback
+                          </p>
+                        </div>
+                        
+                        <p className="text-sm italic text-muted-foreground">"{answer.feedback}"</p>
+
+                        {/* Step-wise Breakdown */}
+                        {answer.markingBreakdown && answer.markingBreakdown.length > 0 && (
+                          <div className="mt-4 space-y-2">
+                            <p className="text-[10px] uppercase tracking-widest font-black text-muted-foreground/60">Marking Breakdown</p>
+                            <div className="grid gap-2">
+                              {answer.markingBreakdown.map((step, si) => (
+                                <div key={si} className="flex items-center justify-between p-2 rounded-lg bg-background/50 border border-border/50 text-xs">
+                                  <div className="flex items-center gap-2">
+                                    {step.status === 'FULL' ? (
+                                      <CheckCircle2 className="h-3 w-3 text-green-500" />
+                                    ) : step.status === 'PARTIAL' ? (
+                                      <AlertCircle className="h-3 w-3 text-yellow-500" />
+                                    ) : (
+                                      <XCircle className="h-3 w-3 text-red-500" />
+                                    )}
+                                    <span className="font-medium">{step.component}</span>
+                                    {step.reason && <span className="text-muted-foreground hidden md:inline">— {step.reason}</span>}
+                                  </div>
+                                  <Badge variant="outline" className="font-mono text-[10px]">
+                                    {step.marks}/{step.maxMarks}
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="grid md:grid-cols-2 gap-4 mt-2">
+                          {answer.correction && (
+                            <div className="p-4 rounded-xl bg-amber-50 border-2 border-amber-200/50 print:border-slate-300 print:bg-white">
+                              <p className="text-[11px] uppercase tracking-wider font-black text-amber-700 mb-2">Teacher's Correction</p>
+                              <p className="text-sm leading-relaxed text-slate-900 font-medium">{answer.correction}</p>
+                            </div>
+                          )}
+                          {answer.explanation && (
+                            <div className="p-4 rounded-xl bg-blue-50 border-2 border-blue-200/50 print:border-slate-300 print:bg-white">
+                              <p className="text-[11px] uppercase tracking-wider font-black text-blue-700 mb-2">Conceptual Explanation</p>
+                              <p className="text-sm leading-relaxed text-slate-900 font-medium">{answer.explanation}</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </>
                   )}

@@ -52,21 +52,8 @@ export async function POST(req: NextRequest) {
       select: { maxMarks: true },
     });
 
-    // Prevent duplicate submissions
-    const existing = await prisma.submission.findFirst({
-      where: {
-        userId: session.user.id,
-        assignmentId,
-        status: { in: ["SUBMITTED", "EVALUATED"] },
-      },
-    });
+    // Allow multiple submissions for the same assignment (retesting)
 
-    if (existing) {
-      return NextResponse.json(
-        { error: "Assignment already submitted", submissionId: existing.id },
-        { status: 409 }
-      );
-    }
 
     // Create submission record
     const submission = await prisma.submission.create({

@@ -11,66 +11,92 @@ import { Separator } from "@/components/ui/separator";
 // ─────────────────────────────────────────
 
 async function getProgressData(userId: string): Promise<ProgressData> {
-  const [submissions, subjects] = await Promise.all([
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { grade: true, board: true },
+  });
+
+  const [submissions, subjects, totalAssignments] = await Promise.all([
     prisma.submission.findMany({
-      where: { userId },
+      where: { userId, status: "EVALUATED" },
       include: { assignment: { include: { subject: true } } },
       orderBy: { submittedAt: "asc" },
     }),
-    prisma.subject.findMany(),
+    prisma.subject.findMany({
+      where: { grade: user.grade, board: user.board },
+      include: { assignments: { select: { id: true } } },
+    }),
+    prisma.assignment.count({
+      where: { subject: { grade: user.grade, board: user.board } }
+    }),
   ]);
 
-  // Weekly scores (index-based proxy)
-  const weeklyMap = new Map<number, { total: number; count: number; completed: number }>();
-  submissions.forEach((s, idx) => {
-    const week = idx + 1;
-    const existing = weeklyMap.get(week) || { total: 0, count: 0, completed: 0 };
-    existing.total += (s.totalScore / s.maxMarks) * 100;
+  // 1. Weekly scores (Calendar based)
+  const weeklyMap = new Map<string, { total: number; count: number }>();
+  submissions.forEach((s) => {
+    const date = new Date(s.submittedAt);
+    const day = date.getDay();
+    const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(date);
+    monday.setDate(diff);
+    monday.setHours(0, 0, 0, 0);
+    const key = monday.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+    
+    const existing = weeklyMap.get(key) || { total: 0, count: 0 };
+    existing.total += s.percentageScore;
     existing.count += 1;
-    existing.completed += 1;
-    weeklyMap.set(week, existing);
+    weeklyMap.set(key, existing);
   });
 
   const weeklyData = Array.from(weeklyMap.entries()).map(([week, data]) => ({
-    week: `Week ${week}`,
+    week,
     score: Math.round(data.total / data.count),
-    completed: data.completed,
+    completed: data.count,
   }));
 
-  const subjectData = subjects.map((subject) => ({
-    name: subject.name,
-    completed: 0,
-    total: 0,
-    average: 0,
-    color: subject.color.replace("bg-", "").replace("-500", ""),
-  }));
-
-  const totalAssignments = await prisma.assignment.count();
-  const submittedCount = submissions.filter((s) => s.status === "SUBMITTED").length;
-  const inProgressCount = submissions.filter((s) => s.status === "IN_PROGRESS").length;
-  const notStartedCount = totalAssignments - submittedCount - inProgressCount;
-
-  const statusData = [
-    { name: "Submitted", value: submittedCount, color: "#22c55e" },
-    { name: "In Progress", value: inProgressCount, color: "#eab308" },
-    { name: "Not Started", value: Math.max(0, notStartedCount), color: "#9ca3af" },
-  ].filter((d) => d.value > 0);
-
-  const allScores = submissions.map((s) => (s.totalScore / s.maxMarks) * 100);
-  const overallAverage =
-    allScores.length > 0
-      ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length)
+  // 2. Subject-wise performance (Real Aggregation)
+  const subjectData = subjects.map((subject) => {
+    const subSubmissions = submissions.filter((s) => s.assignment.subjectId === subject.id);
+    const completed = subSubmissions.length;
+    const total = subject.assignments.length;
+    const average = completed > 0 
+      ? Math.round(subSubmissions.reduce((sum, s) => sum + s.percentageScore, 0) / completed)
       : 0;
 
-  const defaultSubject = { name: "N/A", average: 0, completed: 0, total: 0, color: "" };
-  const bestSubject =
-    subjectData.length > 0
-      ? subjectData.reduce((best, cur) => (cur.average > best.average ? cur : best), subjectData[0])
-      : defaultSubject;
-  const weakestSubject =
-    subjectData.length > 0
-      ? subjectData.reduce((weak, cur) => (cur.average < weak.average ? cur : weak), subjectData[0])
-      : defaultSubject;
+    return {
+      name: subject.name,
+      completed,
+      total,
+      average,
+      color: subject.color.replace("bg-", "").replace("-500", ""),
+    };
+  });
+
+  // 3. Status Distribution
+  const submittedCount = submissions.length;
+  const inProgressCount = await prisma.submission.count({ 
+    where: { userId, status: "IN_PROGRESS" } 
+  });
+  const notStartedCount = Math.max(0, totalAssignments - submittedCount - inProgressCount);
+
+  const statusData = [
+    { name: "Completed", value: submittedCount, color: "#22c55e" },
+    { name: "In Progress", value: inProgressCount, color: "#eab308" },
+    { name: "Not Started", value: notStartedCount, color: "#9ca3af" },
+  ].filter((d) => d.value > 0);
+
+  const overallAverage =
+    submissions.length > 0
+      ? Math.round(submissions.reduce((a, b) => a + b.percentageScore, 0) / submissions.length)
+      : 0;
+
+  const bestSubject = subjectData.length > 0
+    ? [...subjectData].sort((a, b) => b.average - a.average)[0]
+    : { name: "N/A", average: 0, completed: 0, total: 0, color: "" };
+
+  const weakestSubject = subjectData.length > 0
+    ? [...subjectData].filter(s => s.completed > 0).sort((a, b) => a.average - b.average)[0] || subjectData[0]
+    : { name: "N/A", average: 0, completed: 0, total: 0, color: "" };
 
   return {
     weeklyData,

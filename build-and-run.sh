@@ -270,7 +270,7 @@ echo ""
 # Tail the logs
 if [ "$MODE" == "dev" ]; then
   echo -e "${DIM}   (Filtering Inngest polling noise)${RESET}"
-  tail -f "$RAW_LOG" | grep --line-buffered -v "PUT /api/inngest"
+  tail -f "$RAW_LOG" | grep -E --line-buffered -v "(PUT /api/inngest|GET /(\.redwood|\.netlify|x).*inngest)"
 else
   tail -f "$RAW_LOG"
 fi

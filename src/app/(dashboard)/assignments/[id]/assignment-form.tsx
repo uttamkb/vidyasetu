@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, AlertCircle, Palette } from "lucide-react";
+import { Clock, AlertCircle, Palette, Printer, Camera, Upload, ArrowRight } from "lucide-react";
 import { DrawingCanvas } from "@/components/drawing-canvas";
+import { Question } from "@prisma/client";
 
 /**
  * QuestionPointer — new schema shape stored in Assignment.questions Json field.
@@ -17,13 +18,21 @@ export interface QuestionPointer {
   orderIndex: number;
 }
 
+interface QuestionContent {
+  question: string;
+  options?: string[];
+  maxMarks?: number;
+  marks?: number;
+}
+
 export default function AssignmentForm({
   assignmentId,
   fullQuestions,
+  maxMarks,
   timeLimit,
 }: {
   assignmentId: string;
-  fullQuestions: Array<{ pointer: QuestionPointer, question: any }>;
+  fullQuestions: Array<{ pointer: QuestionPointer, question: Question }>;
   maxMarks: number;
   timeLimit: number | null;
 }) {
@@ -33,6 +42,11 @@ export default function AssignmentForm({
   const [timeLeft, setTimeLeft] = useState(timeLimit ? timeLimit * 60 : null);
   const [submitting, setSubmitting] = useState(false);
   const [started, setStarted] = useState(false);
+
+  // New States for Offline Flow
+  const [isOfflineFlow, setIsOfflineFlow] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [needsVerification, setNeedsVerification] = useState(false);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -74,58 +88,337 @@ export default function AssignmentForm({
     }
   };
 
-  const handleTimeUp = () => {
-    handleSubmit();
+  const handlePageScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setTranscribing(true);
+    
+    // Convert all images to Base64
+    const imagePromises = files.map(file => new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(file);
+    }));
+
+    const images = await Promise.all(imagePromises);
+
+    try {
+      const res = await fetch('/api/assignments/scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignmentId, images }),
+      });
+      const data = await res.json();
+      if (data.extractedAnswers) {
+        setAnswers(data.extractedAnswers);
+        setNeedsVerification(true);
+      } else {
+        alert("Unable to extract answers. Please try with clearer photos.");
+      }
+    } catch (err) {
+      alert("Failed to transcribe paper. Please check your connection.");
+    } finally {
+      setTranscribing(false);
+    }
   };
 
-  const handleStart = async () => {
+  const handleStart = async (mode: "online" | "offline") => {
+    if (mode === "offline") {
+      setIsOfflineFlow(true);
+      window.print();
+    }
     setStarted(true);
     await fetch(`/api/assignments/${assignmentId}/start`, { method: "POST" });
   };
 
-  const handleTimeUpRef = useRef(handleTimeUp);
-  handleTimeUpRef.current = handleTimeUp;
+  const handlePrint = () => {
+    window.print();
+  };
 
   useEffect(() => {
-    if (!timeLeft || !started) return;
-    if (timeLeft <= 0) {
-      handleTimeUpRef.current();
-      return;
-    }
+    if (!timeLeft || !started || isOfflineFlow) return;
     const timer = setInterval(() => {
-      setTimeLeft((prev) => (prev ? prev - 1 : null));
+      setTimeLeft((prev) => (prev && prev > 0 ? prev - 1 : 0));
     }, 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, started]);
+  }, [timeLeft, started, isOfflineFlow]);
 
-  if (!started) {
+  // Handle auto-submit on time up
+  useEffect(() => {
+    if (timeLeft === 0 && !isOfflineFlow && started) {
+      handleSubmit();
+    }
+  }, [timeLeft, isOfflineFlow, started]);
+
+  const handleFileUpload = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setAnswers((prev) => ({ ...prev, [index]: reader.result as string }));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Verification Screen
+  if (needsVerification) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Ready to Start?</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2 text-sm">
-            <p>This assignment contains <strong>{fullQuestions.length}</strong> questions.</p>
-            {timeLimit && (
-              <div className="flex items-center gap-2 text-amber-600">
-                <Clock className="h-4 w-4" />
-                <span>Time limit: {timeLimit} minutes</span>
-              </div>
-            )}
-          </div>
-          <Button onClick={handleStart} className="w-full bg-primary hover:bg-primary/90 shadow-premium" size="lg">
-            Start Assignment
-          </Button>
-        </CardContent>
-      </Card>
+       <Card className="no-print border-primary/20 shadow-2xl">
+         <CardHeader className="bg-primary/5 text-center pb-8 border-b">
+           <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
+             <Upload className="h-8 w-8 text-primary" />
+           </div>
+           <CardTitle className="text-2xl">Verify Extracted Answers</CardTitle>
+           <CardDescription className="max-w-md mx-auto">
+             Our AI has transcribed your handwritten paper. Please check the text below and fix any typos before final evaluation.
+           </CardDescription>
+         </CardHeader>
+         <CardContent className="space-y-8 pt-8 max-h-[60vh] overflow-y-auto px-6">
+           {fullQuestions.map((item, index) => (
+             <div key={index} className="space-y-3 p-5 border-2 rounded-xl bg-muted/30 transition-colors hover:bg-muted/50">
+                <div className="flex justify-between items-center">
+                   <p className="font-bold text-sm text-primary">Question {index + 1}</p>
+                   <Badge variant="outline" className="text-[10px]">{item.question?.type || "SUBJECTIVE"}</Badge>
+                </div>
+                <p className="text-xs font-medium text-muted-foreground leading-relaxed italic border-l-2 border-primary/20 pl-3">
+                  {(item.question?.content as any)?.question}
+                </p>
+                <textarea
+                   className="w-full border-2 rounded-lg p-4 text-sm font-medium focus:ring-2 focus:ring-primary/50 transition-all shadow-inner"
+                   value={answers[index] || ""}
+                   onChange={(e) => setAnswers(prev => ({ ...prev, [index]: e.target.value }))}
+                   rows={3}
+                   placeholder="AI could not read this answer. Please type it manually..."
+                />
+             </div>
+           ))}
+         </CardContent>
+         <div className="p-6 border-t bg-muted/10">
+           <Button onClick={handleSubmit} className="w-full py-8 text-xl font-black shadow-premium group" disabled={submitting}>
+              {submitting ? "Analyzing Answers..." : "Confirm & Get Result"}
+              <ArrowRight className="h-6 w-6 ml-2 group-hover:translate-x-1 transition-transform" />
+           </Button>
+         </div>
+       </Card>
     );
   }
 
+  // Start Screen
+  if (!started) {
+    return (
+      <>
+        {/* OMR-Structured Print-Only Version */}
+        <div className="hidden print:block space-y-10 p-4 bg-white text-slate-950 font-serif w-full">
+          {/* Header with Registration Marks */}
+          <div className="relative border-4 border-slate-950 p-8 mb-16 print-header">
+            {/* Corner Registration Marks (Critical for AI Spatial Anchoring) */}
+            <div className="absolute -top-1 -left-1 w-12 h-12 bg-slate-950" />
+            <div className="absolute -top-1 -right-1 w-12 h-12 bg-slate-950" />
+            <div className="absolute -bottom-1 -left-1 w-12 h-12 bg-slate-950" />
+            <div className="absolute -bottom-1 -right-1 w-12 h-12 bg-slate-950" />
+            
+            <div className="text-center">
+              <h1 className="text-3xl font-black uppercase tracking-widest mb-1">Board Ready Examination Paper</h1>
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6 underline decoration-slate-300 underline-offset-4">Machine-Readable Standard Format (V2.0)</p>
+              
+              <div className="grid grid-cols-2 gap-12 text-left border-t-2 border-slate-100 pt-6">
+                <div className="space-y-3">
+                  <div className="text-[10px] font-black text-slate-400 tracking-tighter uppercase">STUDENT NAME (BLOCK LETTERS)</div>
+                  <div className="h-10 border-b-2 border-slate-200 w-full" />
+                </div>
+                <div className="space-y-3">
+                  <div className="text-[10px] font-black text-slate-400 tracking-tighter uppercase">STUDENT ROLL NO / ID</div>
+                  <div className="h-10 border-b-2 border-slate-200 w-full" />
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          {fullQuestions.map((item, index) => {
+            const qContent = item.question?.content as unknown as QuestionContent;
+            const isMCQ = !!qContent?.options;
+            return (
+              <div key={item.pointer.questionId} className="print-break-inside-avoid pb-12 border-b-2 border-slate-50 last:border-0 mb-8">
+                <div className="flex items-start gap-6 mb-6">
+                  <div className="bg-slate-950 text-white font-black text-xl w-12 h-12 flex items-center justify-center shrink-0">
+                    {index + 1}
+                  </div>
+                  <div className="flex-1 pt-1">
+                    <p className="font-bold text-xl leading-snug mb-2">{qContent?.question}</p>
+                    <div className="inline-block px-2 py-0.5 bg-slate-100 text-[10px] font-black text-slate-600 uppercase tracking-tighter">
+                      [ Value: {qContent?.maxMarks || qContent?.marks || 1} MARKS ]
+                    </div>
+                  </div>
+                </div>
+
+                {isMCQ ? (
+                  <div className="ml-16 space-y-4">
+                    {/* Options List */}
+                    <div className="grid grid-cols-1 gap-3 mb-6">
+                      {qContent?.options?.map((opt: string, i: number) => (
+                        <div key={i} className="flex items-center gap-4">
+                          <div className="w-7 h-7 rounded-full border-2 border-slate-300 flex items-center justify-center font-bold text-xs text-slate-400">
+                            {String.fromCharCode(65 + i)}
+                          </div>
+                          <span className="text-slate-700 text-sm">{opt}</span>
+                        </div>
+                      ))}
+                    </div>
+                    
+                    {/* OMR Response Zone */}
+                    <div className="p-6 bg-slate-50 border-2 border-slate-200 rounded-xl max-w-sm">
+                      <p className="text-[9px] font-black text-slate-400 mb-4 uppercase tracking-tighter italic">Final OMR Response Zone — Fill one circle completely with Black/Blue Pen</p>
+                      <div className="flex justify-between items-center px-4">
+                        {['A', 'B', 'C', 'D'].map(label => (
+                          <div key={label} className="flex flex-col items-center gap-2">
+                             <div className="w-12 h-12 rounded-full border-4 border-slate-950 flex items-center justify-center font-black text-xl">
+                               {label}
+                             </div>
+                             <span className="text-[8px] font-black text-slate-400 tracking-tight">CIRCLE {label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="ml-16">
+                    <p className="text-[9px] font-black text-slate-400 mb-3 uppercase tracking-tighter italic">Handwritten Answer Zone — Write your solution strictly within this box</p>
+                    <div className="border-4 border-slate-950 min-h-[350px] relative overflow-hidden bg-white shadow-[8px_8px_0px_rgba(0,0,0,0.05)]">
+                       {/* Subtle Graph/Ruled Guides for handwriting alignment */}
+                       <div className="absolute inset-0 opacity-[0.1] pointer-events-none" 
+                            style={{ 
+                              backgroundImage: 'linear-gradient(#000 1px, transparent 1px)', 
+                              backgroundSize: '100% 30px' 
+                            }} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+          
+          {/* Footer Page Marker */}
+          <div className="flex justify-between items-center pt-8 text-[10px] font-bold text-slate-300 border-t border-slate-100">
+            <span>VIDYASETU AI-EXAM-PROTOCOL V2</span>
+            <span>ASSIGNMENT ID: {assignmentId}</span>
+            <span>END OF PAPER</span>
+          </div>
+        </div>
+
+        {/* Start Screen Card */}
+        <Card className="no-print border-none shadow-2xl overflow-hidden">
+          <div className="h-2 w-full bg-gradient-to-r from-primary via-amber-400 to-primary" />
+          <CardHeader className="text-center pb-2 pt-8">
+            <CardTitle className="text-3xl font-black">Choose Practice Mode</CardTitle>
+            <CardDescription className="text-base">
+              Select how you want to solve these {fullQuestions.length} questions.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-8 space-y-6">
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Online Path */}
+              <div 
+                onClick={() => handleStart("online")}
+                className="group relative p-6 border-2 rounded-2xl cursor-pointer hover:border-primary hover:bg-primary/5 transition-all"
+              >
+                <div className="flex flex-col items-center text-center space-y-4">
+                  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                     <Palette className="h-8 w-8 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg">Practice Online</h3>
+                    <p className="text-sm text-muted-foreground">Solve using drawing pad and interactive tools.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Offline Path */}
+              <div 
+                onClick={() => handleStart("offline")}
+                className="group relative p-6 border-2 border-amber-200 bg-amber-50/30 rounded-2xl cursor-pointer hover:border-amber-400 hover:bg-amber-50 transition-all"
+              >
+                <div className="absolute -top-3 right-4">
+                   <Badge className="bg-amber-400 text-amber-950 font-black border-none px-3 py-1">RECOMMENDED</Badge>
+                </div>
+                <div className="flex flex-col items-center text-center space-y-4">
+                  <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center group-hover:scale-110 transition-transform">
+                     <Printer className="h-8 w-8 text-amber-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-lg">Practice on Paper</h3>
+                    <p className="text-sm text-muted-foreground">Print as an OMR paper. Write offline. Scan to grade.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 flex items-center justify-center gap-4 text-xs font-bold text-muted-foreground uppercase tracking-widest">
+               <Clock className="h-4 w-4" />
+               <span>Time limit: {timeLimit || "Unlimited"} minutes</span>
+               <span>•</span>
+               <span>Goal: {fullQuestions.length} Correct Answers</span>
+            </div>
+          </CardContent>
+        </Card>
+      </>
+    );
+  }
+
+  // Active Test (Online or Scan Phase)
   return (
     <div className="space-y-4">
-      {timeLeft !== null && (
-        <div className="sticky top-4 z-40 glass rounded-xl p-4 flex items-center justify-between border-primary/10">
+      {/* Print Styles */}
+      <style jsx global>{`
+        @page {
+          size: A4;
+          margin: 15mm 15mm 20mm 15mm;
+        }
+        @media print {
+          /* Hide all dashboard chrome */
+          nav, aside, footer, header, .no-print, button, .sticky, .badge, [role="navigation"], [role="banner"], .glass { 
+            display: none !important; 
+          }
+          
+          body { 
+            background: white !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            color: black !important;
+            width: 100% !important;
+          }
+
+          main, .container { 
+            margin: 0 !important; 
+            padding: 0 !important; 
+            max-width: 100% !important;
+            width: 100% !important;
+          }
+
+          .card { border: none !important; box-shadow: none !important; margin: 0 !important; }
+          .card-content { padding: 0 !important; }
+          
+          /* CRITICAL: Force questions to stay together */
+          .print-break-inside-avoid { 
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            display: block !important;
+            position: relative !important;
+            margin-bottom: 2rem !important;
+          }
+          
+          /* Prevent header overlap */
+          .print-header {
+            margin-bottom: 3rem !important;
+            page-break-after: avoid !important;
+          }
+        }
+      `}</style>
+
+      {/* Timer (Online Mode Only) */}
+      {!isOfflineFlow && timeLeft !== null && (
+        <div className="sticky top-4 z-40 glass rounded-xl p-4 flex items-center justify-between border-primary/10 no-print shadow-xl">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-primary/10 rounded-full">
               <Clock className="h-5 w-5 text-primary" />
@@ -146,129 +439,220 @@ export default function AssignmentForm({
         </div>
       )}
 
-      {fullQuestions.map((item, index) => {
-        const qData = item.question?.content;
-        return (
-        <Card key={item.pointer.questionId} className="border-none shadow-premium overflow-hidden">
-          <div className="h-1 w-full bg-gradient-to-r from-primary/50 to-transparent" />
-          <CardHeader className="pb-3">
-            <div className="flex items-start justify-between gap-4">
-              <CardTitle className="text-base font-medium">
-                Question {index + 1}
+      {/* Offline Instructions / Upload Flow */}
+      {isOfflineFlow ? (
+        <Card className="no-print border-amber-200 bg-amber-50/20 shadow-lg overflow-hidden">
+           <div className="h-1.5 w-full bg-amber-400" />
+           <CardHeader>
+              <CardTitle className="flex items-center gap-3">
+                 <Printer className="h-6 w-6 text-amber-600" />
+                 Active Offline Practice Session
               </CardTitle>
-              <Badge variant="outline">ID: {item.pointer.questionId.slice(0, 8)}&hellip;</Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {qData ? (
-              <div className="mb-4">
-                <p className="text-sm font-medium mb-4">{qData.question}</p>
-                {qData.options && qData.options.length > 0 ? (
-                  <div className="space-y-2 mb-3">
-                    {qData.options.map((opt: string, i: number) => {
-                      const optionLetter = String.fromCharCode(65 + i);
-                      const isSelected = answers[index] === optionLetter || answers[index] === opt;
-                      return (
-                        <div
-                          key={i}
-                          onClick={() => setAnswers((prev) => ({ ...prev, [index]: optionLetter }))}
-                          className={`flex items-center gap-3 p-3 border rounded-md cursor-pointer transition-colors ${
-                            isSelected ? "bg-primary/10 border-primary" : "hover:bg-muted/50"
-                          }`}
-                        >
-                          <div className={`flex items-center justify-center w-6 h-6 rounded-full border text-xs font-medium ${
-                            isSelected ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground"
-                          }`}>
-                            {optionLetter}
-                          </div>
-                          <span className="text-sm">{opt}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {showCanvas[index] ? (
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">Drawing Pad</span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setShowCanvas((prev) => ({ ...prev, [index]: false }))}
-                          >
-                            Close Canvas
+              <CardDescription>
+                You should be writing your answers on the printed paper. When you are done, scan your pages below.
+              </CardDescription>
+           </CardHeader>
+           <CardContent className="space-y-6">
+              <div className="flex flex-col items-center justify-center py-10 border-2 border-dashed border-amber-300 rounded-2xl bg-white/50">
+                 {transcribing ? (
+                    <div className="flex flex-col items-center space-y-4">
+                       <div className="w-12 h-12 border-4 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                       <p className="font-bold text-amber-900">Analyzing your paper with AI...</p>
+                       <p className="text-xs text-amber-600">Please wait, transcribing handwriting and OMR bubbles.</p>
+                    </div>
+                 ) : (
+                    <>
+                       <div className="p-4 bg-amber-100 rounded-full mb-4">
+                          <Camera className="h-10 w-10 text-amber-600" />
+                       </div>
+                       <h4 className="text-xl font-black text-amber-900 mb-2">Scan Finished Paper</h4>
+                       <p className="text-sm text-amber-700 text-center max-w-sm mb-6">
+                         Take clear photos of all pages. Ensure registration marks are visible for best accuracy.
+                       </p>
+                       <div className="relative">
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*"
+                            capture="environment"
+                            className="absolute inset-0 opacity-0 cursor-pointer"
+                            onChange={handlePageScan}
+                          />
+                          <Button className="bg-amber-500 hover:bg-amber-600 text-white font-bold px-8 py-6 rounded-xl shadow-lg">
+                             <Upload className="h-5 w-5 mr-2" /> Upload Page Photos
                           </Button>
-                        </div>
-                        <DrawingCanvas 
-                          initialDataUrl={answers[index]?.startsWith("data:image") ? answers[index] : undefined}
-                          onDrawEnd={(dataUrl) => setAnswers((prev) => ({ ...prev, [index]: dataUrl }))} 
-                        />
-                      </div>
-                    ) : (
-                      <>
-                        {answers[index]?.startsWith("data:image") ? (
-                          <div className="space-y-2">
-                            <img src={answers[index]} alt="Drawing" className="max-h-32 border rounded" />
-                            <div className="flex gap-2">
-                              <Button variant="outline" size="sm" onClick={() => setShowCanvas((prev) => ({ ...prev, [index]: true }))}>
-                                <Palette className="h-4 w-4 mr-2" /> Edit Drawing
-                              </Button>
-                              <Button variant="outline" size="sm" onClick={() => setAnswers((prev) => { const next = {...prev}; delete next[index]; return next; })}>
-                                Clear Answer
-                              </Button>
-                            </div>
-                          </div>
-                        ) : (
-                          <>
-                            <textarea
-                              className="w-full border rounded-md p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/50"
-                              placeholder="Type your explanation or steps here..."
-                              value={answers[index] ?? ""}
-                              onChange={(e) =>
-                                setAnswers((prev) => ({ ...prev, [index]: e.target.value }))
-                              }
-                              rows={4}
-                            />
-                            <div className="flex items-center gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setShowCanvas((prev) => ({ ...prev, [index]: true }))}
-                              >
-                                <Palette className="h-4 w-4 mr-2" /> Open Drawing Pad
-                              </Button>
-                              <p className="text-xs text-muted-foreground">
-                                Use the drawing pad for graphs, geometry, or complex math notation.
-                              </p>
-                            </div>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
+                       </div>
+                    </>
+                 )}
               </div>
-            ) : (
-               <p className="text-sm text-red-500 mb-3">Error loading question content.</p>
-            )}
-          </CardContent>
+              <div className="flex items-center justify-between text-xs font-medium text-amber-700">
+                 <p>Tip: Ensure good lighting for higher transcription accuracy.</p>
+                 <Button variant="ghost" size="sm" onClick={() => setIsOfflineFlow(false)}>Switch to Online Mode</Button>
+              </div>
+           </CardContent>
         </Card>
-      )})}
+      ) : (
+        /* Online Question Cards */
+        <>
+          {fullQuestions.map((item, index) => {
+            const qData = item.question?.content as unknown as QuestionContent;
+            return (
+              <Card key={item.pointer.questionId} className="border-none shadow-premium overflow-hidden no-print">
+                <div className="h-1 w-full bg-gradient-to-r from-primary/50 to-transparent" />
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-center gap-2">
+                      <CardTitle className="text-base font-medium">
+                        Question {index + 1}
+                      </CardTitle>
+                      <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-bold">
+                        {qData?.maxMarks || qData?.marks || 1} { (qData?.maxMarks || qData?.marks || 1) === 1 ? 'Mark' : 'Marks' }
+                      </Badge>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">ID: {item.pointer.questionId.slice(0, 8)}&hellip;</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {qData ? (
+                    <div className="mb-4">
+                      <p className="text-sm font-medium mb-4 leading-relaxed">{qData.question}</p>
+                      {qData.options && qData.options.length > 0 ? (
+                        <div className="space-y-2 mb-3">
+                          {qData.options.map((opt: string, i: number) => {
+                            const optionLetter = String.fromCharCode(65 + i);
+                            const isSelected = answers[index] === optionLetter || answers[index] === opt;
+                            return (
+                              <div
+                                key={i}
+                                onClick={() => setAnswers((prev) => ({ ...prev, [index]: optionLetter }))}
+                                className={`flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer transition-all ${
+                                  isSelected ? "bg-primary/10 border-primary shadow-sm" : "hover:bg-muted/50 border-transparent bg-muted/30"
+                                }`}
+                              >
+                                <div className={`flex items-center justify-center w-7 h-7 rounded-full border-2 text-xs font-black transition-colors ${
+                                  isSelected ? "bg-primary text-primary-foreground border-primary" : "bg-background text-muted-foreground border-muted"
+                                }`}>
+                                  {optionLetter}
+                                </div>
+                                <span className="text-sm font-medium">{opt}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {showCanvas[index] ? (
+                            <div className="space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-sm font-bold">Drawing Pad</span>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setShowCanvas((prev) => ({ ...prev, [index]: false }))}
+                                >
+                                  Close Canvas
+                                </Button>
+                              </div>
+                              <DrawingCanvas 
+                                initialDataUrl={answers[index]?.startsWith("data:image") ? answers[index] : undefined}
+                                onDrawEnd={(dataUrl) => setAnswers((prev) => ({ ...prev, [index]: dataUrl }))} 
+                              />
+                            </div>
+                          ) : (
+                            <>
+                              {answers[index]?.startsWith("data:image") ? (
+                                <div className="space-y-3">
+                                  <div className="relative group max-w-sm rounded-xl overflow-hidden border-2 border-primary/20 shadow-md">
+                                    <img src={answers[index]} alt="Answer Draft" className="w-full object-contain" />
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                       <Button variant="secondary" size="sm" onClick={() => setAnswers((prev) => { const next = {...prev}; delete next[index]; return next; })}>
+                                          Replace Answer
+                                       </Button>
+                                    </div>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <Button variant="outline" size="sm" onClick={() => setShowCanvas((prev) => ({ ...prev, [index]: true }))}>
+                                      <Palette className="h-4 w-4 mr-2" /> Edit Drawing
+                                    </Button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <textarea
+                                    className="w-full border-2 border-muted bg-muted/10 rounded-xl p-4 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all font-medium leading-relaxed"
+                                    placeholder="Type your explanation, formula steps, or reasoning here..."
+                                    value={answers[index] ?? ""}
+                                    onChange={(e) =>
+                                      setAnswers((prev) => ({ ...prev, [index]: e.target.value }))
+                                    }
+                                    rows={5}
+                                  />
+                                   <div className="flex flex-wrap items-center gap-3">
+                                     <Button
+                                       type="button"
+                                       variant="outline"
+                                       size="sm"
+                                       className="rounded-lg h-9 border-primary/30 text-primary hover:bg-primary/5"
+                                       onClick={() => setShowCanvas((prev) => ({ ...prev, [index]: true }))}
+                                     >
+                                       <Palette className="h-4 w-4 mr-2" /> Open Drawing Pad
+                                     </Button>
+                                     
+                                     <div className="relative">
+                                       <input
+                                         type="file"
+                                         accept="image/*"
+                                         capture="environment"
+                                         className="absolute inset-0 opacity-0 cursor-pointer"
+                                         onChange={(e) => handleFileUpload(index, e)}
+                                       />
+                                       <Button
+                                         type="button"
+                                         variant="outline"
+                                         size="sm"
+                                         className="rounded-lg h-9"
+                                       >
+                                         <Camera className="h-4 w-4 mr-2" /> Photo of Paper
+                                       </Button>
+                                     </div>
+                                   </div>
+                                </>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                     <p className="text-sm text-red-500 mb-3">Error loading question content.</p>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
 
-      <div className="flex items-center justify-between pb-8">
-        <p className="text-sm text-muted-foreground">
-          Answered: {Object.keys(answers).length}/{fullQuestions.length}
-        </p>
-        <Button
-          onClick={handleSubmit}
-          disabled={submitting || Object.keys(answers).length === 0}
-          size="lg"
-        >
-          {submitting ? "Submitting..." : "Submit Assignment"}
-        </Button>
-      </div>
+          <div className="flex items-center justify-between py-10 no-print">
+            <div className="flex items-center gap-2">
+               <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center font-black text-primary">
+                  {Math.round((Object.keys(answers).length / fullQuestions.length) * 100)}%
+               </div>
+               <div>
+                  <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Progress</p>
+                  <p className="text-sm font-bold">{Object.keys(answers).length} of {fullQuestions.length} Answered</p>
+               </div>
+            </div>
+            <Button
+              onClick={handleSubmit}
+              disabled={submitting || Object.keys(answers).length === 0}
+              size="lg"
+              className="px-10 py-7 text-xl font-black shadow-premium group"
+            >
+              {submitting ? "Evaluating..." : "Finish Assignment"}
+              <ArrowRight className="h-6 w-6 ml-2 group-hover:translate-x-1 transition-transform" />
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

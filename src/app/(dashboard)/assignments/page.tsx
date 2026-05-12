@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Clock, ArrowRight, Plus } from "lucide-react";
 import Link from "next/link";
 import { GenerateAIModal } from "./generate-ai-modal";
+import { ArchiveButton } from "./archive-button";
 
 type AssignmentStatus = "NOT_STARTED" | "IN_PROGRESS" | "SUBMITTED" | "EVALUATED";
 
@@ -24,41 +25,59 @@ interface AssignmentListItem {
   totalScore: number | null;
   percentageScore: number | null;
   submissionId: string | null;
+  submittedAt: Date | null;
 }
 
 async function getAssignments(userId: string): Promise<AssignmentListItem[]> {
-  const assignments = await prisma.assignment.findMany({
-    include: {
-      subject: true,
-      submissions: {
-        where: { userId },
-        select: { id: true, status: true, totalScore: true, percentageScore: true },
+  const [user, assignments] = await Promise.all([
+    prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { archivedAssignments: true } }),
+    prisma.assignment.findMany({
+      include: {
+        subject: true,
+        submissions: {
+          where: { userId },
+          select: { id: true, status: true, totalScore: true, percentageScore: true, submittedAt: true },
+          orderBy: { submittedAt: 'desc' },
+        },
       },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+      orderBy: { createdAt: "desc" },
+    }),
+  ]);
 
-  return assignments.map((a) => {
-    const submission = a.submissions[0];
-    const status: AssignmentStatus = submission
-      ? (submission.status as AssignmentStatus)
-      : "NOT_STARTED";
+  const archivedSet = new Set(user.archivedAssignments);
+  const threeMonthsAgo = new Date();
+  threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
 
-    return {
-      id: a.id,
-      title: a.title,
-      description: a.description,
-      type: a.type,
-      subject: a.subject,
-      maxMarks: a.maxMarks,
-      dueDate: a.dueDate,
-      timeLimit: a.timeLimit,
-      status,
-      totalScore: submission?.totalScore ?? null,
-      percentageScore: submission?.percentageScore ?? null,
-      submissionId: submission?.id ?? null,
-    };
-  });
+  return assignments
+    .filter((a) => !archivedSet.has(a.id))
+    .map((a) => {
+      const submission = a.submissions[0];
+      const status: AssignmentStatus = submission
+        ? (submission.status as AssignmentStatus)
+        : "NOT_STARTED";
+
+      return {
+        id: a.id,
+        title: a.title,
+        description: a.description,
+        type: a.type,
+        subject: a.subject,
+        maxMarks: a.maxMarks,
+        dueDate: a.dueDate,
+        timeLimit: a.timeLimit,
+        status,
+        totalScore: submission?.totalScore ?? null,
+        percentageScore: submission?.percentageScore ?? null,
+        submissionId: submission?.id ?? null,
+        submittedAt: submission?.submittedAt ?? null,
+      };
+    })
+    .filter((a) => {
+      if (a.status === "SUBMITTED" || a.status === "EVALUATED") {
+        if (a.submittedAt && a.submittedAt < threeMonthsAgo) return false;
+      }
+      return true;
+    });
 }
 
 async function getSubjects(userId: string) {
@@ -173,7 +192,7 @@ export default async function AssignmentsPage() {
 // Assignment Card
 // ─────────────────────────────────────────
 function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
-  const pct = a.percentageScore ?? (a.totalScore !== null ? Math.round((a.totalScore / a.maxMarks) * 100) : null);
+  const pct = a.percentageScore !== null ? Math.round(a.percentageScore) : (a.totalScore !== null ? Math.round((a.totalScore / a.maxMarks) * 100) : null);
   const isDone = a.status === "SUBMITTED" || a.status === "EVALUATED";
 
   return (
@@ -184,6 +203,7 @@ function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
           <div className="flex items-center gap-1.5">
             <div className={`w-2 h-2 rounded-full ${STATUS_DOT[a.status]}`} />
             <span className="text-xs text-muted-foreground">{STATUS_LABEL[a.status]}</span>
+            <ArchiveButton assignmentId={a.id} />
           </div>
         </div>
         <CardTitle className="text-base mt-2 leading-snug">{a.title}</CardTitle>

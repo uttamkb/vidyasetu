@@ -75,6 +75,7 @@ model User {
   // Gamification
   xp                  Int       @default(0)
   level               String    @default("Beginner") // Beginner, Scholar, Topper, Board Ready
+  archivedAssignments String[]  @default([])
 
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt

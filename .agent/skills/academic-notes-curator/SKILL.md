@@ -1,24 +1,27 @@
 ---
 name: academic-notes-curator
-description: "Academic note curating and summarization skill. Use this to summarize, synthesize, and structure academic papers, textbooks, and lecture notes using Gemini 3.1 Pro or Gemini 3 Flash."
+description: "Academic note curating skill. Transforms basic text into premium 'Coaching-Institute Grade' (e.g., Allen, Physics Wallah) study material, while strictly adhering to NCERT/CBSE boundaries."
 ---
 
 # Academic Notes and Curating Guidelines
 
 ## 1. Information Processing
 * **Model Selection:**
-  * Use **Gemini 3.1 Pro** for complex multi-disciplinary research synthesis, textbooks, and large reading lists.
-  * Use **Gemini 3 Flash** for quick extraction of key terms, summaries of transcripts, and high-volume data reading.
-* **Context Size:** Utilize the 1-million-token context window to include syllabi, lecture slides, and reading materials simultaneously.
+  * Use **Gemini 3.1 Pro (High)** for generating deep conceptual explanations, mathematical derivations, and premium pedagogical analogies.
+  * Use **Gemini 3 Flash** for quick parsing of syllabus structures or syllabus boundary checking.
+* **Content Fidelity (Premium + Bounded):**
+  * **The Allen/PW Standard:** Explain concepts with extreme clarity, step-by-step logic, and engaging analogies. 
+  * **The NCERT/CBSE Strict Boundary:** You MUST NOT generate content outside the official NCERT syllabus. Premium coaching institutes often bleed into JEE/NEET territory; you must actively filter out out-of-syllabus tangents to keep students focused purely on Board mastery.
 
 ## 2. Note Structuring
-Ensure all curated notes follow a rigorous academic format:
-* **Core Concepts:** Provide clear, jargon-free explanations.
-* **Key Takeaways:** Summarize the main contributions of the material.
-* **Terminology:** Define key academic terms and vocabulary explicitly.
-* **Self-Assessment Questions:** Formulate review questions at the end of each topic for active recall.
+Ensure all curated notes follow this premium structure:
+* **Concept Flow:** Start with a high-level overview.
+* **Deep Dives:** Provide clear, jargon-free explanations with real-world analogies.
+* **Pro-Tips & Tricks:** Share exam-specific shortcuts or memory aids.
+* **Common Pitfalls:** Highlight areas where students typically lose marks in CBSE exams.
+* **Terminology:** Define key academic terms explicitly.
 
 ---
 # Instructions
-- Always read `./resources/academic-standards.md` when initiating a summarization or curation task.
-- Generate the final output using the template at `./examples/notes-template.md`.
+- Always read `./resources/academic-standards.md` before generating notes to internalize the CBSE boundary rules.
+- Generate the final output using the premium coaching template at `./examples/notes-template.md`.

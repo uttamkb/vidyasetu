@@ -11,6 +11,11 @@
 import { prisma } from "@/lib/db";
 import { geminiProModels, geminiFlashModels, callGemini } from "@/lib/gemini";
 import { toJson } from "@/lib/prisma-json";
+import { 
+  EVALUATION_PROMPT, 
+  MULTIMODAL_EVALUATION_PROMPT, 
+  OVERALL_FEEDBACK_PROMPT 
+} from "@/prompts/evaluation";
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -32,6 +37,15 @@ interface EvaluatedAnswer {
   feedback: string;
   correction: string;
   explanation: string;
+  markingBreakdown?: MarkingComponent[];
+}
+
+interface MarkingComponent {
+  component: string;
+  marks: number;
+  maxMarks: number;
+  status: 'FULL' | 'PARTIAL' | 'NONE';
+  reason?: string;
 }
 
 interface AIEvalResult {
@@ -40,6 +54,7 @@ interface AIEvalResult {
   feedback: string;
   correction: string;
   explanation: string;
+  markingBreakdown?: MarkingComponent[];
 }
 
 // ─────────────────────────────────────────────────────────
@@ -107,9 +122,40 @@ export async function evaluateSubmission(submissionId: string) {
 
     if (type === "MCQ" || type === "NUMERIC") {
       // Auto-grade
+      const studentAns = String(answer.userAnswer || "").trim();
+      const modelAns = String(content.correctAnswer || "").trim();
+      const options = (content.options as string[]) || [];
+
+      // Helper: clean text for comparison (remove label prefixes, lowercase, trim)
+      const clean = (text: string) => {
+        return text
+          .replace(/^[A-Z][\.\)\-\s]+/, "") // Remove "A. ", "B) ", "C- "
+          .trim()
+          .toLowerCase();
+      };
+
+      const cleanModel = clean(modelAns);
+      const cleanStudent = clean(studentAns);
+
+      // Find the label (A, B, C, D) for the correct answer
+      let correctLabel = "";
+      if (type === "MCQ" && options.length > 0) {
+        const correctIdx = options.findIndex(
+          (opt) => clean(opt) === cleanModel || opt.trim().toLowerCase() === modelAns.toLowerCase()
+        );
+        if (correctIdx !== -1) {
+          correctLabel = String.fromCharCode(65 + correctIdx);
+        }
+      }
+
+      // Is correct if student gave:
+      // 1. The exact label (e.g. "B")
+      // 2. The exact text (e.g. "Rapid increase...")
+      // 3. The cleaned text (e.g. "rapid increase...")
       const isCorrect =
-        String(answer.userAnswer).trim().toLowerCase() ===
-        String(content.correctAnswer).trim().toLowerCase();
+        studentAns.toUpperCase() === correctLabel ||
+        cleanStudent === cleanModel ||
+        studentAns.toLowerCase() === modelAns.toLowerCase();
 
       evaluated = {
         questionId: id,
@@ -121,6 +167,15 @@ export async function evaluateSubmission(submissionId: string) {
         feedback: isCorrect ? "Correct!" : "Incorrect.",
         correction: isCorrect ? "" : `Correct answer: ${content.correctAnswer}`,
         explanation: content.explanation,
+        markingBreakdown: [
+          {
+            component: "Correct Option Selection",
+            marks: isCorrect ? maxMarks : 0,
+            maxMarks: maxMarks,
+            status: isCorrect ? "FULL" : "NONE",
+            reason: isCorrect ? "The selected option matches the correct answer." : "The selected option does not match the correct answer."
+          }
+        ]
       };
     } else {
       // AI evaluation for SHORT_ANSWER / LONG_ANSWER
@@ -131,6 +186,7 @@ export async function evaluateSubmission(submissionId: string) {
         maxMarks: maxMarks,
         grade: submission.assignment.subject.grade,
         subject: submission.assignment.subject.name,
+        keyPoints: content.keyPoints,
       });
 
       evaluated = {
@@ -138,6 +194,8 @@ export async function evaluateSubmission(submissionId: string) {
         questionIndex: answer.questionIndex,
         userAnswer: answer.userAnswer,
         ...aiResult,
+        // Safety: Ensure marksAwarded never exceeds maxMarks or goes below 0
+        marksAwarded: Math.min(maxMarks, Math.max(0, aiResult.marksAwarded)),
         maxMarks: maxMarks,
       };
     }
@@ -155,7 +213,7 @@ export async function evaluateSubmission(submissionId: string) {
   }
 
   const maxMarks = submission.maxMarks;
-  const percentageScore = maxMarks > 0 ? (totalScore / maxMarks) * 100 : 0;
+  const percentageScore = maxMarks > 0 ? Math.round((totalScore / maxMarks) * 100) : 0;
 
   // 4. Generate overall AI feedback
   const overallFeedback = await generateOverallFeedback({
@@ -219,35 +277,15 @@ async function evaluateSubjectiveAnswer(params: {
   maxMarks: number;
   grade: string;
   subject: string;
+  keyPoints?: string[];
 }): Promise<AIEvalResult> {
-  const { question, modelAnswer, studentAnswer, maxMarks, grade, subject } = params;
+  const { question, modelAnswer, studentAnswer, maxMarks, grade, subject, keyPoints } = params;
 
-  let finalPrompt: any = `
-You are a CBSE Class ${grade} ${subject} examiner. Evaluate this student's answer strictly but fairly.
+  const keyPointsSection = keyPoints && keyPoints.length > 0
+    ? `\n\nKey Points Required for Full Marks:\n${keyPoints.map(p => `- ${p}`).join("\n")}`
+    : "";
 
-Question: ${question}
-
-Model Answer: ${modelAnswer}
-
-Student's Answer: ${studentAnswer}
-
-Max Marks: ${maxMarks}
-
-Evaluate and return JSON:
-{
-  "isCorrect": boolean (true if student gets >50% marks),
-  "marksAwarded": number (between 0 and ${maxMarks}, award partial marks for partial understanding),
-  "feedback": "1-2 sentences: what the student did right and what was missing",
-  "correction": "What the student should have written (if wrong or partial)",
-  "explanation": "Brief conceptual explanation of the correct answer in simple language"
-}
-
-Marking guidelines:
-- Award full marks if key points are all covered (exact wording not required)
-- Award partial marks proportionally for partially correct answers
-- Be strict: unsupported claims, wrong facts = 0 marks for that point
-- Return ONLY the JSON object, no other text
-`;
+  let finalPrompt: any;
 
   // Multimodal prompt for drawings/graphs
   if (studentAnswer.startsWith("data:image/")) {
@@ -255,9 +293,13 @@ Marking guidelines:
     const mimeType = header.replace("data:", "").split(";")[0];
     
     finalPrompt = [
-      `You are a CBSE Class ${grade} ${subject} examiner. Evaluate this student's DRAWING/GRAPH strictly but fairly based on the model answer.\n\nQuestion: ${question}\n\nModel Answer: ${modelAnswer}\n\nMax Marks: ${maxMarks}\n\nThe student's drawing is attached as an image. Evaluate it and return JSON exactly as requested:\n{ "isCorrect": boolean, "marksAwarded": number, "feedback": "string", "correction": "string", "explanation": "string" }\nReturn ONLY the JSON object.`,
+      MULTIMODAL_EVALUATION_PROMPT({ grade, subject, question, modelAnswer, maxMarks }),
       { inlineData: { data: base64, mimeType } }
     ];
+  } else {
+    finalPrompt = EVALUATION_PROMPT({ 
+      question, modelAnswer, studentAnswer, maxMarks, grade, subject, keyPointsSection 
+    });
   }
 
   return await callGemini<AIEvalResult>(geminiProModels, finalPrompt, {
@@ -288,21 +330,17 @@ async function generateOverallFeedback(params: {
   const correctCount = evaluatedAnswers.filter((a) => a.isCorrect).length;
   const skippedCount = totalQuestionCount - evaluatedAnswers.length;
 
-  const prompt = `
-You are a supportive CBSE Class ${grade} ${subjectName} teacher.
-
-Student scored ${score}/${maxMarks} (${percentageScore.toFixed(1)}%).
-Out of ${totalQuestionCount} questions, they got ${correctCount} correct, ${wrongCount} wrong, and skipped ${skippedCount}.
-
-Write a brief 2-3 sentence feedback paragraph that:
-1. Acknowledges their score warmly
-2. Highlights 1 strength (if any correct answers)
-3. Gives 1 specific, actionable improvement tip
-
-Tone: encouraging, direct, like a good teacher. No fluff.
-
-Return JSON: { "feedback": "your feedback paragraph here" }
-`;
+  const prompt = OVERALL_FEEDBACK_PROMPT({
+    grade,
+    subjectName,
+    score,
+    maxMarks,
+    percentageScore,
+    totalQuestionCount,
+    correctCount,
+    wrongCount,
+    skippedCount
+  });
 
   const result = await callGemini<{ feedback: string }>(
     geminiFlashModels,

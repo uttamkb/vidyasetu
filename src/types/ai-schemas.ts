@@ -19,12 +19,16 @@ export const AIQuestionContentSchema = z.object({
   correctAnswer: z.string().min(1),
   explanation: z.string().min(5),
   maxMarks: z.number().int().min(1).max(10),
+  keyPoints: z.array(z.string()).optional(),
 });
 
 export const AIQuestionSchema = z.object({
   type: z.enum(["MCQ", "SHORT_ANSWER", "NUMERIC"]),
   bloomLevel: z.enum(["REMEMBER", "UNDERSTAND", "APPLY", "ANALYZE"]),
   difficulty: z.number().int().min(1).max(5),
+  examWeightage: z.string().optional(),
+  sourcePattern: z.string().optional(),
+  conceptTag: z.string().optional(),
   content: AIQuestionContentSchema,
 });
 

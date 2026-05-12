@@ -69,6 +69,10 @@ export async function GET(
           correctAnswer: string;
           explanation: string;
           maxMarks: number;
+          examWeightage?: string;
+          sourcePattern?: string;
+          conceptTag?: string;
+          keyPoints?: string[];
         };
 
         return {
@@ -82,6 +86,10 @@ export async function GET(
             question: content.question,
             options: content.options, // MCQ options (no correct answer yet)
             maxMarks: content.maxMarks,
+            examWeightage: content.examWeightage,
+            sourcePattern: content.sourcePattern,
+            conceptTag: content.conceptTag,
+            keyPoints: content.keyPoints,
             // correctAnswer is deliberately excluded here
           },
         };

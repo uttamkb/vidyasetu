@@ -157,7 +157,12 @@ export async function generateAssignment(input: GenerateAssignmentInput) {
           type: q.type as QuestionType,
           bloomLevel: q.bloomLevel as BloomLevel,
           difficulty: q.difficulty,
-          content: toJson(q.content),
+          content: toJson({
+            ...q.content,
+            examWeightage: q.examWeightage,
+            sourcePattern: q.sourcePattern,
+            conceptTag: q.conceptTag,
+          }),
           source: "ai_generated",
           verifiedByHuman: false,
         },
