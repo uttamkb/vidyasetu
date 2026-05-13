@@ -61,7 +61,7 @@ fi
 
 # 5. Grant Secret Access to the Service Account
 echo -e "${BLUE}Granting Secret Manager access...${NC}"
-SECRETS=("DATABASE_URL" "AUTH_SECRET" "GEMINI_API_KEY" "AUTH_GOOGLE_ID" "AUTH_GOOGLE_SECRET")
+SECRETS=("DATABASE_URL" "AUTH_SECRET" "GEMINI_API_KEY" "AUTH_GOOGLE_ID" "AUTH_GOOGLE_SECRET" "INNGEST_EVENT_KEY" "INNGEST_SIGNING_KEY")
 for secret in "${SECRETS[@]}"; do
     gcloud secrets add-iam-policy-binding $secret \
         --member="serviceAccount:${RUNNER_SA}@${PROJECT_ID}.iam.gserviceaccount.com" \
@@ -107,8 +107,8 @@ gcloud run deploy $SERVICE_NAME \
     --memory=1Gi \
     --cpu=1 \
     --max-instances=10 \
-    --set-env-vars="NEXTAUTH_URL=https://vidyasetu-service-eg4ospxzfq-ue.a.run.app" \
-    --set-secrets="DATABASE_URL=DATABASE_URL:latest,AUTH_SECRET=AUTH_SECRET:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,AUTH_GOOGLE_ID=AUTH_GOOGLE_ID:latest,AUTH_GOOGLE_SECRET=AUTH_GOOGLE_SECRET:latest"
+    --set-env-vars="NEXTAUTH_URL=https://vidyasetu-service-eg4ospxzfq-ue.a.run.app,INNGEST_DEV=false" \
+    --set-secrets="DATABASE_URL=DATABASE_URL:latest,AUTH_SECRET=AUTH_SECRET:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,AUTH_GOOGLE_ID=AUTH_GOOGLE_ID:latest,AUTH_GOOGLE_SECRET=AUTH_GOOGLE_SECRET:latest,INNGEST_EVENT_KEY=INNGEST_EVENT_KEY:latest,INNGEST_SIGNING_KEY=INNGEST_SIGNING_KEY:latest"
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}Deployment successful!${NC}"

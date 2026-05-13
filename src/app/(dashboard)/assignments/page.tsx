@@ -26,6 +26,7 @@ interface AssignmentListItem {
   percentageScore: number | null;
   submissionId: string | null;
   submittedAt: Date | null;
+  createdAt: Date;
 }
 
 async function getAssignments(userId: string): Promise<AssignmentListItem[]> {
@@ -70,6 +71,7 @@ async function getAssignments(userId: string): Promise<AssignmentListItem[]> {
         percentageScore: submission?.percentageScore ?? null,
         submissionId: submission?.id ?? null,
         submittedAt: submission?.submittedAt ?? null,
+        createdAt: a.createdAt,
       };
     })
     .filter((a) => {
@@ -235,6 +237,15 @@ function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
             </div>
           )}
           <div>Max marks: {a.maxMarks}</div>
+          <div className="text-foreground/50 italic">
+            Generated: {new Intl.DateTimeFormat('en-IN', {
+              day: '2-digit',
+              month: 'short',
+              hour: '2-digit',
+              minute: '2-digit',
+              hour12: true
+            }).format(new Date(a.createdAt))}
+          </div>
           {a.dueDate && (
             <div>Due: {new Date(a.dueDate).toLocaleDateString("en-IN")}</div>
           )}

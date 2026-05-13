@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const { assignment, aiQCount, topicNames, chapterName, location } = await generateAssignment({
+    const { assignment, aiQCount, topicNames, chapterName, location, mainSubtopicId } = await generateAssignment({
       userId: session.user.id,
       ...parsed.data,
     });
@@ -75,6 +75,7 @@ export async function POST(req: NextRequest) {
             state: location.state,
             district: location.district,
             schoolName: location.school,
+            subtopicId: mainSubtopicId,
           }
         }
       });

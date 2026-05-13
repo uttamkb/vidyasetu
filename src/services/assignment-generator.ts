@@ -139,7 +139,8 @@ export async function generateAssignment({
       state: user.state,
       district: user.district,
       school: user.school,
-    }
+    },
+    mainSubtopicId: weightedSubtopics[0]?.id || allSubtopics[0]?.id
   };
 }
 
@@ -159,6 +160,7 @@ export async function generateAssignmentAIContent(
     state?: string | null;
     district?: string | null;
     schoolName?: string | null;
+    subtopicId: string;
   }
 ) {
   try {
@@ -179,21 +181,17 @@ export async function generateAssignmentAIContent(
     });
     const existingList = assignment.questions as any[];
 
-    // Create AI questions
-    const createOps = generated.map((q: AIQuestion) => {
-      return prisma.question.create({
-        data: {
-          subtopicId: "pending_subtopic", // Placeholder for MVP
-          type: q.type as QuestionType,
-          bloomLevel: q.bloomLevel as BloomLevel,
-          difficulty: q.difficulty,
-          content: toJson(q.content),
-          source: "ai_generated",
-        },
-      });
+    // Create AI questions in a single batch for performance
+    const savedQuestions = await prisma.question.createManyAndReturn({
+      data: generated.map((q: AIQuestion) => ({
+        subtopicId: context.subtopicId,
+        type: q.type as QuestionType,
+        bloomLevel: q.bloomLevel as BloomLevel,
+        difficulty: q.difficulty,
+        content: toJson(q.content),
+        source: "ai_generated",
+      })),
     });
-
-    const savedQuestions = await prisma.$transaction(createOps);
     
     // Update assignment
     const newList = [...existingList];

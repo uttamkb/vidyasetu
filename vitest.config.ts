@@ -22,5 +22,8 @@ export default defineConfig({
     },
     // Allow tests that don't import React to run without DOM mocks
     pool: "forks",
+    env: {
+      INNGEST_DEV: "true",
+    },
   },
 });

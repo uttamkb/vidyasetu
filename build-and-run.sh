@@ -120,6 +120,14 @@ check_env "GEMINI_API_KEY" || ALL_OK=false
 
 if [ "$ALL_OK" = true ]; then
   echo -e "      ${GREEN}✓ Environment variables validated${RESET}"
+  
+  # Export variables globally for all child processes
+  if [ -f ".env.local" ]; then
+    set -a
+    source .env.local
+    set +a
+    echo -e "      ${DIM}Environment variables exported from .env.local${RESET}"
+  fi
 else
   echo -e "      ${RED}✗ Missing required environment variables. Pipeline aborted.${RESET}"
   exit 1
@@ -226,13 +234,16 @@ echo -e "      ${DIM}Inngest: http://localhost:8288${RESET}"
 
 if [ "$MODE" == "prod" ]; then
   echo -e "      ${BOLD}${GREEN}Starting in PRODUCTION mode on port $PORT...${RESET}"
-  PORT=$PORT npm start > "$RAW_LOG" 2>&1 &
+  echo -e "      ${DIM}Using standalone server entry point...${RESET}"
+  export INNGEST_DEV=false
+  PORT=$PORT node .next/standalone/server.js > "$RAW_LOG" 2>&1 &
   echo $! > "$PID_FILE"
 else
   echo -e "      ${BOLD}${CYAN}Starting in DEVELOPMENT mode on port $PORT...${RESET}"
   # Wipe cache for a clean restart in dev too
   rm -rf .next/cache
-  PORT=$PORT npm run dev > "$RAW_LOG" 2>&1 &
+  export INNGEST_DEV=true
+  PORT=$PORT npm run dev -- --hostname 127.0.0.1 > "$RAW_LOG" 2>&1 &
   echo $! > "$PID_FILE"
 fi
 
