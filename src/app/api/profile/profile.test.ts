@@ -24,7 +24,7 @@ describe("Profile API", () => {
     (auth as any).mockResolvedValue(null);
     const req = new Request("http://localhost/api/profile", {
       method: "PATCH",
-      body: JSON.stringify({ name: "Test", grade: "9", board: "CBSE" }),
+      body: JSON.stringify({ name: "Test", grade: "9", board: "CBSE", state: "Karnataka", leaderboardOptIn: true }),
     });
     const res = await PATCH(req);
     expect(res.status).toBe(401);
@@ -51,7 +51,7 @@ describe("Profile API", () => {
 
     const req = new Request("http://localhost/api/profile", {
       method: "PATCH",
-      body: JSON.stringify({ name: "New Name", grade: "10", board: "ICSE" }),
+      body: JSON.stringify({ name: "New Name", grade: "10", board: "ICSE", state: "Maharashtra", leaderboardOptIn: true }),
     });
     const res = await PATCH(req);
     const data = await res.json();
@@ -61,7 +61,7 @@ describe("Profile API", () => {
     expect(data.data.name).toBe("New Name");
     expect(prisma.user.update).toHaveBeenCalledWith({
       where: { id: "user-1" },
-      data: { name: "New Name", grade: "10", board: "ICSE" },
+      data: { name: "New Name", grade: "10", board: "ICSE", state: "Maharashtra", leaderboardOptIn: true },
     });
   });
 });

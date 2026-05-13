@@ -184,8 +184,7 @@ export async function generateRemedialAssignment(
     type: "REMEDIAL",
     difficulty: "EASY", // start easy for remediation
     chapterId: subtopic.topic.chapter.id,
-    topicIds: [subtopic.topic.id],
-    questionCount: 5,
+    qCount: 5,
   });
 
   return assignment;

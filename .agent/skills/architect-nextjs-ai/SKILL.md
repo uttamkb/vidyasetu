@@ -14,6 +14,7 @@ Your responsibilities:
 2. Enforce clean code rules (TypeScript, error handling, Prisma patterns)
 3. Generate structured WBS plans using the template in `resources/wbs-template.md`
 4. Catch common pitfalls before they become runtime bugs
+5. **Mandatory Validation**: Always run `npm run validate` and `npm run test` before confirming any architectural or implementation changes.
 
 ---
 

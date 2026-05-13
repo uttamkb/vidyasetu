@@ -1,14 +1,15 @@
 import { prisma } from "@/lib/db";
 import { geminiFlashModels, callGemini } from "@/lib/gemini";
 import { toJson } from "@/lib/prisma-json";
-import { AssignmentType, BloomLevel, DifficultyLevel, QuestionType, AssignmentStatus } from "@prisma/client";
-import { buildQuestionGenerationPrompt } from "@/prompts/question-generation";
+import { AssignmentType, BloomLevel, DifficultyLevel, QuestionType } from "@prisma/client";
+import { buildQuestionGenerationPrompt, type QuestionGenerationContext } from "@/prompts/question-generation";
 import { AIAssignmentOutputSchema, type AIQuestion } from "@/types/ai-schemas";
 
 const DIFFICULTY_MAP: Record<DifficultyLevel, number[]> = {
   EASY: [1, 2],
   MEDIUM: [3],
   HARD: [4, 5],
+  MIXED: [1, 2, 3, 4, 5],
 };
 
 interface GenerateOptions {
@@ -179,7 +180,7 @@ export async function generateAssignmentAIContent(
     const existingList = assignment.questions as any[];
 
     // Create AI questions
-    const createOps = generated.map((q) => {
+    const createOps = generated.map((q: AIQuestion) => {
       return prisma.question.create({
         data: {
           subtopicId: "pending_subtopic", // Placeholder for MVP
@@ -223,18 +224,7 @@ export async function generateAssignmentAIContent(
   }
 }
 
-// ─────────────────────────────────────────────────────────
-// HELPERS
-// ─────────────────────────────────────────────────────────
-
-async function generateQuestionsWithAI(input: {
-  subtopics: string;
-  difficulty: DifficultyLevel;
-  count: number;
-  state?: string | null;
-  district?: string | null;
-  schoolName?: string | null;
-}) {
+async function generateQuestionsWithAI(input: QuestionGenerationContext) {
   const prompt = buildQuestionGenerationPrompt(input);
   const result = await callGemini(geminiFlashModels, prompt, {
     userId: "system", // Usage tracking for generation
@@ -246,10 +236,10 @@ async function generateQuestionsWithAI(input: {
     throw new Error("AI output failed validation.");
   }
 
-  return parsed.data.questions;
+  return parsed.data;
 }
 
-function buildTitle({ subjectName, type, difficulty, chapterName }: any) {
+function buildTitle({ subjectName, type, difficulty, chapterName }: { subjectName: string; type: AssignmentType; difficulty: DifficultyLevel; chapterName: string | null | undefined }) {
   const diffStr = difficulty.charAt(0) + difficulty.slice(1).toLowerCase();
   if (type === "CHAPTER" && chapterName) {
     return `${subjectName}: ${chapterName} (${diffStr})`;

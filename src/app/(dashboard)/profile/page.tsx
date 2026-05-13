@@ -6,7 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { EditProfileModal } from "./edit-profile-modal";
-import { UserProfileData } from "@/types/profile";
 import {
   User,
   Mail,
@@ -111,6 +110,7 @@ export default async function ProfilePage() {
               state: user.state,
               district: user.district,
               school: user.school,
+              leaderboardOptIn: user.leaderboardOptIn,
             }} />
           </div>
         </CardContent>

@@ -20,6 +20,10 @@ vi.mock("@/lib/db", () => ({
     assignment: {
       create: vi.fn(),
     },
+    user: {
+      findUniqueOrThrow: vi.fn(),
+      update: vi.fn(),
+    },
     $transaction: vi.fn((ops) => Promise.all(ops)),
   },
 }));
@@ -93,6 +97,13 @@ describe("assignment-generator", () => {
     ];
     (prisma.question.findMany as any).mockResolvedValue(mockBankQuestions);
 
+    // Mock user fetch (location)
+    (prisma.user.findUniqueOrThrow as any).mockResolvedValue({
+      state: "Karnataka",
+      district: "Bengaluru",
+      school: "Vydehi School",
+    });
+
     // Mock assignment creation
     (prisma.assignment.create as any).mockResolvedValue({
       id: "asgn-1",
@@ -115,7 +126,10 @@ describe("assignment-generator", () => {
       ...mockSubject,
       chapters: [],
     });
+    (prisma.user.findUniqueOrThrow as any).mockResolvedValue({
+      state: "Karnataka",
+    });
 
-    await expect(generateAssignment({ ...mockInput, type: "FULL", chapterId: undefined })).rejects.toThrow("No subtopics found for the given scope.");
+    await expect(generateAssignment({ ...mockInput, type: "FULL_SYLLABUS", chapterId: undefined })).rejects.toThrow("No subtopics found for the given scope.");
   });
 });

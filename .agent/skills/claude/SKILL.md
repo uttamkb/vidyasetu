@@ -65,6 +65,16 @@ For multi-step tasks, state a brief plan:
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
 
+## 5. Mandatory Validation
+
+**Never confirm success without verifying integrity.**
+
+Before informing the user that a task is complete or a fix is implemented:
+- You **MUST** run `npm run validate` (which executes `typecheck` and `lint`).
+- You **MUST** ensure `npm run test` passes if the changes affect logic covered by tests.
+- If errors occur, fix them and repeat the validation until it passes.
+- Mention the validation result in your final response.
+
 ---
 
 **These guidelines are working if:** fewer unnecessary changes in diffs, fewer rewrites due to overcomplication, and clarifying questions come before implementation rather than after mistakes.
