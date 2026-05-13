@@ -20,13 +20,17 @@ VidyaSetu is a Next.js 16 (App Router) application that serves as an adaptive le
 │   (App Router   │     │  Neon Adapter   │     │  (Serverless)   │
 │    Turbopack)   │     │  (Wasm engine)  │     └─────────────────┘
 └─────────────────┘     └─────────────────┘
+         │                       ▲
+         ▼                       │
+┌─────────────────┐     ┌─────────────────┐
+│  Inngest        │────▶│  Background     │
+│  (Event Queue)  │     │  Workers        │
+└─────────────────┘     └─────────────────┘
          │
          ▼
 ┌─────────────────┐
 │  Google Gemini  │
 │  AI SDK         │
-│  (@google/      │
-│  generative-ai) │
 └─────────────────┘
          │
          ▼
@@ -42,11 +46,13 @@ VidyaSetu is a Next.js 16 (App Router) application that serves as an adaptive le
 
 | Service | Responsibility | Location |
 |---------|---------------|----------|
-| `AssignmentEngine` | Generate AI-powered assignments (chapter/semester/full syllabus) | `src/services/assignment-engine.ts` |
+| `AssignmentGenerator` | Generate AI-powered assignments (chapter/semester/full syllabus) | `src/services/assignment-generator.ts` |
 | `EvaluationEngine` | AI-grade subjective answers, auto-grade objective answers | `src/services/evaluation-engine.ts` |
+| `UsageTracker` | Monitor AI calls, tokens, and costs per user/model | `src/services/usage-tracker.ts` |
 | `RecommendationEngine` | Identify weak topics, suggest next steps | `src/services/recommendation-engine.ts` |
-| `ContentCurator` | Curate and seed study materials via Gemini | `src/services/content-curator.ts` |
 | `Prisma Singleton` | Thread-safe DB client with Neon adapter | `src/lib/db.ts` |
+| `Inngest Client` | Event bus for async tasks (evaluation, generation) | `src/inngest/client.ts` |
+| `Constants` | Shared Indian states, subjects, and curriculum metadata | `src/lib/constants.ts` |
 
 ## Auth Architecture — Three-File Pattern
 
@@ -93,18 +99,20 @@ from bundling them (which causes `process.env.DATABASE_URL` to be undefined at r
 ### Assignment Generation Flow
 
 1. Student requests assignment → `POST /api/assignments/generate`
-2. `AssignmentEngine.generate(userId, options)` builds prompt with student profile
-3. Gemini cascade (2.5-flash -> 2.0-flash-lite) generates structured JSON assignment
-4. Response parsed with Zod → stored in `Assignment` table
-5. Frontend renders assignment with question cards
+2. `AssignmentGenerator.generate(userId, options)` fetches user location (School/District/State) and mastery data.
+3. Generator builds prompt with student-specific context (e.g., "Vydehi School of Excellence").
+4. AI emulates localized exam patterns using a fallback hierarchy: School → District → State → National.
+5. Gemini Flash generates structured JSON → stored in `Assignment` table.
+6. Inngest handles background question enrichment if bank-AI split is used.
 
 ### Submission & Evaluation Flow
 
 1. Student submits answers → `POST /api/submissions`
-2. Objective questions → auto-graded immediately
-3. Subjective questions → `EvaluationEngine.evaluate()` calls Gemini cascade (2.5-pro -> 3.1-pro)
-4. Results stored in `Submission` with `aiFeedback` and `totalScore`
-5. `RecommendationEngine` updates topic mastery based on results
+2. `EvaluationEngine` triggers Inngest event → `vidyasetu/submission.submitted`
+3. Inngest worker picks up job → runs async evaluation cascade (2.5-pro -> 3.1-pro)
+4. `UsageTracker` logs model calls and tokens in background
+5. Results stored in `Submission` with `aiFeedback` and `totalScore`
+6. `RecommendationEngine` updates topic mastery based on results
 
 ### Leaderboard Flow
 
@@ -134,6 +142,7 @@ from bundling them (which causes `process.env.DATABASE_URL` to be undefined at r
 
 - Auth.js v5 with Google OAuth (primary) and demo Credentials (MVP testing only)
 - All `/api/*` routes validate session via `auth()` from `@/lib/auth`
+- **Session Sync**: Profile updates (name, image, location) are synced to the browser via Auth.js `update()` and custom JWT callbacks.
 - AI prompts are parameterized; user content is never string-interpolated directly
 - Rate limit enforced: 30 AI requests/minute per user (implemented in `proxy.ts` middleware)
 - `DATABASE_URL` is server-only — never prefixed with `NEXT_PUBLIC_`

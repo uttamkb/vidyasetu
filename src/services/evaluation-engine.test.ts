@@ -4,8 +4,8 @@ import { prisma } from "@/lib/db";
 import { callGemini } from "@/lib/gemini";
 
 // Mock dependencies
-vi.mock("@/lib/db", () => ({
-  prisma: {
+vi.mock("@/lib/db", () => {
+  const mockPrisma = {
     submission: {
       findUniqueOrThrow: vi.fn(),
       update: vi.fn(),
@@ -25,8 +25,10 @@ vi.mock("@/lib/db", () => ({
     leaderboardEntry: {
       upsert: vi.fn(),
     },
-  },
-}));
+    $transaction: vi.fn((callback) => callback(mockPrisma)),
+  };
+  return { prisma: mockPrisma };
+});
 
 vi.mock("@/lib/gemini", () => ({
   geminiProModels: [],
@@ -131,13 +133,14 @@ describe("evaluation-engine", () => {
     expect(prisma.leaderboardEntry.upsert).toHaveBeenCalledTimes(3);
   });
 
-  it("throws error if submission is already evaluated", async () => {
+  it("returns skipped if submission is already evaluated", async () => {
     (prisma.submission.findUniqueOrThrow as any).mockResolvedValue({
       ...mockSubmission,
       status: "EVALUATED",
     });
 
-    await expect(evaluateSubmission(mockSubmissionId)).rejects.toThrow("Submission already evaluated.");
+    const result = await evaluateSubmission(mockSubmissionId);
+    expect(result.skipped).toBe(true);
   });
 
   it("handles multimodal evaluation (images)", async () => {

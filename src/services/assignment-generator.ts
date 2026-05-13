@@ -1,90 +1,67 @@
-/**
- * Assignment Generator Service
- *
- * Generates AI-powered assignments for students based on:
- * - Scope: Chapter / Semester / Full Syllabus
- * - Difficulty: Easy / Medium / Hard / Mixed
- * - Personalization: UserMastery scores (weak areas get more questions)
- */
-
 import { prisma } from "@/lib/db";
 import { geminiFlashModels, callGemini } from "@/lib/gemini";
 import { toJson } from "@/lib/prisma-json";
-import { AssignmentType, BloomLevel, DifficultyLevel, QuestionType } from "@prisma/client";
+import { AssignmentType, BloomLevel, DifficultyLevel, QuestionType, AssignmentStatus } from "@prisma/client";
 import { buildQuestionGenerationPrompt } from "@/prompts/question-generation";
 import { AIAssignmentOutputSchema, type AIQuestion } from "@/types/ai-schemas";
 
-// ─────────────────────────────────────────────────────────
-// Types
-// ─────────────────────────────────────────────────────────
-
-export interface GenerateAssignmentInput {
-  userId: string;
-  subjectId: string;
-  type: AssignmentType;
-  difficulty: DifficultyLevel;
-  chapterId?: string;      // required for CHAPTER type
-  topicIds?: string[];     // optional: specific topics
-  questionCount?: number;  // default: 10
-  timeLimit?: number;      // minutes; default: null (untimed)
-}
-
-interface AIGeneratedQuestion extends AIQuestion {}
-
-// ─────────────────────────────────────────────────────────
-// Difficulty → numeric range mapping
-// ─────────────────────────────────────────────────────────
-
 const DIFFICULTY_MAP: Record<DifficultyLevel, number[]> = {
   EASY: [1, 2],
-  MEDIUM: [2, 3],
+  MEDIUM: [3],
   HARD: [4, 5],
-  MIXED: [1, 2, 3, 4, 5],
 };
 
-// ─────────────────────────────────────────────────────────
-// Main: Generate Assignment
-// ─────────────────────────────────────────────────────────
+interface GenerateOptions {
+  userId: string;
+  subjectId: string;
+  chapterId?: string;
+  type: AssignmentType;
+  difficulty: DifficultyLevel;
+  qCount?: number;
+  timeLimit?: number;
+}
 
-export async function generateAssignment(input: GenerateAssignmentInput) {
-  const {
-    userId,
-    subjectId,
-    type,
-    difficulty,
-    chapterId,
-    topicIds,
-    questionCount = 10,
-    timeLimit,
-  } = input;
-
-  // 1. Fetch scope info (subject + chapter if applicable)
+/**
+ * Orchestrates assignment creation. 
+ * Creates a skeleton assignment and returns info for background AI generation.
+ */
+export async function generateAssignment({
+  userId,
+  subjectId,
+  chapterId,
+  type,
+  difficulty,
+  qCount = 10,
+  timeLimit,
+}: GenerateOptions) {
+  // 1. Fetch Subject context
   const subject = await prisma.subject.findUniqueOrThrow({
     where: { id: subjectId },
-    include: {
-      chapters: {
-        where: chapterId ? { id: chapterId } : undefined,
-        include: { topics: { include: { subtopics: true } } },
-        orderBy: { orderIndex: "asc" },
-      },
-    },
+    include: { chapters: { include: { topics: { include: { subtopics: true } } } } },
   });
 
-  // 2. Collect all relevant subtopics
-  const allSubtopics = subject.chapters.flatMap((ch) =>
-    ch.topics.flatMap((t) =>
-      topicIds && topicIds.length > 0
-        ? t.subtopics.filter((st) => topicIds.includes(t.id))
-        : t.subtopics
-    )
-  );
+  // 1b. Fetch User location
+  const user = await prisma.user.findUniqueOrThrow({
+    where: { id: userId },
+    select: { state: true, district: true, school: true },
+  });
+
+  // 2. Identify target subtopics based on scope (CHAPTER vs FULL)
+  let allSubtopics: any[] = [];
+  if (type === "CHAPTER" && chapterId) {
+    const chapter = subject.chapters.find((c) => c.id === chapterId);
+    if (!chapter) throw new Error("Chapter not found in subject scope.");
+    allSubtopics = chapter.topics.flatMap((t) => t.subtopics);
+  } else {
+    allSubtopics = subject.chapters.flatMap((c) => c.topics.flatMap((t) => t.subtopics));
+  }
 
   if (allSubtopics.length === 0) {
     throw new Error("No subtopics found for the given scope.");
   }
 
-  // 3. Get user mastery to personalize question distribution
-  const masteryRows = await prisma.userMastery.findMany({
+  // 3. Fetch user mastery for these subtopics to bias selection/generation
+  const userMastery = await prisma.userMastery.findMany({
     where: {
       userId,
       subtopicId: { in: allSubtopics.map((s) => s.id) },
@@ -92,15 +69,14 @@ export async function generateAssignment(input: GenerateAssignmentInput) {
   });
 
   const masteryBySubtopic = Object.fromEntries(
-    masteryRows.map((m) => [m.subtopicId, m.masteryScore])
+    userMastery.map((m) => [m.subtopicId, m.masteryScore])
   );
 
-  // 4. Weight subtopics — lower mastery = more questions
+  // 4. Weigh subtopics (lower mastery = higher weight)
   const weightedSubtopics = allSubtopics.map((st) => ({
     ...st,
     weight: Math.max(10, 100 - (masteryBySubtopic[st.id] ?? 50)),
   }));
-  const totalWeight = weightedSubtopics.reduce((sum, s) => sum + s.weight, 0);
 
   // 5. Fetch existing questions from bank
   const difficultyLevels = DIFFICULTY_MAP[difficulty];
@@ -110,82 +86,21 @@ export async function generateAssignment(input: GenerateAssignmentInput) {
       difficulty: { in: difficultyLevels },
       verifiedByHuman: true,
     },
-    orderBy: { avgAccuracy: "asc" }, // harder (lower accuracy) first for personalization
-    take: questionCount * 3, // fetch extra for selection pool
+    orderBy: { avgAccuracy: "asc" },
   });
 
-  // 6. Determine how many to generate with AI vs. pull from bank
-  const bankQCount = Math.min(existingQuestions.length, Math.floor(questionCount * 0.7));
-  const aiQCount = questionCount - bankQCount;
-
+  // 6. Determine bank vs AI split (70% bank, 30% AI)
+  const bankQCount = Math.min(existingQuestions.length, Math.floor(qCount * 0.7));
+  const aiQCount = qCount - bankQCount;
   const selectedBankQuestions = existingQuestions.slice(0, bankQCount);
 
-  // 7. Generate remaining questions with AI if needed
-  if (aiQCount > 0) {
-    const targetSubtopics = [...weightedSubtopics]
-      .sort((a, b) => b.weight - a.weight)
-      .slice(0, 3)
-      .map((s) => s.name)
-      .join(", ");
-
-    const chapterName = chapterId
-      ? subject.chapters.find((c) => c.id === chapterId)?.name
-      : "all chapters";
-
-    const generated = await generateQuestionsWithAI({
-      subjectName: subject.name,
-      grade: subject.grade,
-      chapterName: chapterName ?? "all chapters",
-      subtopics: targetSubtopics,
-      difficulty,
-      count: aiQCount,
-    });
-
-    if (generated.length === 0) {
-      throw new Error("AI failed to generate questions. Please try again.");
-    }
-
-    // FIX WBS-01: batch all creates in a single transaction (was N+1 sequential await)
-    // FIX: pick subtopics by weight rank, not the broken `totalWeight > 0` check
-    const sortedByWeight = [...weightedSubtopics].sort((a, b) => b.weight - a.weight);
-
-    const createOps = generated.map((q, idx) => {
-      const subtopic = sortedByWeight[idx % sortedByWeight.length];
-      return prisma.question.create({
-        data: {
-          subtopicId: subtopic.id,
-          type: q.type as QuestionType,
-          bloomLevel: q.bloomLevel as BloomLevel,
-          difficulty: q.difficulty,
-          content: toJson({
-            ...q.content,
-            examWeightage: q.examWeightage,
-            sourcePattern: q.sourcePattern,
-            conceptTag: q.conceptTag,
-          }),
-          source: "ai_generated",
-          verifiedByHuman: false,
-        },
-      });
-    });
-
-    // Single round-trip to DB instead of N sequential inserts
-    const savedQuestions = await prisma.$transaction(createOps);
-    selectedBankQuestions.push(...savedQuestions);
-  }
-
-  // 8. Build question list for assignment (IDs + order)
-  const questionList = selectedBankQuestions.map((q, i) => ({
-    questionId: q.id,
-    orderIndex: i,
-  }));
-
+  // 7. Calculate initial max marks
   const maxMarks = selectedBankQuestions.reduce((sum, q) => {
-    const content = q.content as { maxMarks?: number };
+    const content = q.content as any;
     return sum + (content.maxMarks ?? 5);
   }, 0);
 
-  // 9. Create the Assignment record
+  // 8. Create Assignment record (as GENERATING)
   const chapterForTitle = chapterId
     ? subject.chapters.find((c) => c.id === chapterId)?.name
     : null;
@@ -199,10 +114,11 @@ export async function generateAssignment(input: GenerateAssignmentInput) {
       difficulty,
       subjectId,
       chapterId: chapterId ?? null,
-      questions: toJson(questionList),
+      questions: toJson(selectedBankQuestions.map((q, i) => ({ questionId: q.id, orderIndex: i }))),
       maxMarks,
       timeLimit: timeLimit ?? null,
       isAIGenerated: aiQCount > 0,
+      status: aiQCount > 0 ? "GENERATING" : "READY",
       authorId: userId,
       targetGrade: subject.grade,
       targetBoard: subject.board,
@@ -213,59 +129,130 @@ export async function generateAssignment(input: GenerateAssignmentInput) {
     },
   });
 
-  return { assignment, questionList: selectedBankQuestions };
+  return { 
+    assignment, 
+    aiQCount,
+    topicNames: weightedSubtopics.slice(0, 3).map(s => s.name).join(", "),
+    chapterName: chapterForTitle || "Full Syllabus",
+    location: {
+      state: user.state,
+      district: user.district,
+      school: user.school,
+    }
+  };
+}
+
+/**
+ * Background worker logic: Generates AI questions and updates the assignment.
+ */
+export async function generateAssignmentAIContent(
+  assignmentId: string, 
+  userId: string, 
+  aiQCount: number,
+  context: { 
+    subjectName: string; 
+    grade: string; 
+    chapterName: string; 
+    subtopics: string; 
+    difficulty: DifficultyLevel;
+    state?: string | null;
+    district?: string | null;
+    schoolName?: string | null;
+  }
+) {
+  try {
+    const generated = await generateQuestionsWithAI({
+      subjectName: context.subjectName,
+      grade: context.grade,
+      chapterName: context.chapterName,
+      subtopics: context.subtopics,
+      difficulty: context.difficulty,
+      count: aiQCount,
+      state: context.state,
+      district: context.district,
+      schoolName: context.schoolName,
+    });
+
+    const assignment = await prisma.assignment.findUniqueOrThrow({
+      where: { id: assignmentId }
+    });
+    const existingList = assignment.questions as any[];
+
+    // Create AI questions
+    const createOps = generated.map((q) => {
+      return prisma.question.create({
+        data: {
+          subtopicId: "pending_subtopic", // Placeholder for MVP
+          type: q.type as QuestionType,
+          bloomLevel: q.bloomLevel as BloomLevel,
+          difficulty: q.difficulty,
+          content: toJson(q.content),
+          source: "ai_generated",
+        },
+      });
+    });
+
+    const savedQuestions = await prisma.$transaction(createOps);
+    
+    // Update assignment
+    const newList = [...existingList];
+    let addedMarks = 0;
+    savedQuestions.forEach((q, i) => {
+      newList.push({ questionId: q.id, orderIndex: existingList.length + i });
+      const content = q.content as any;
+      addedMarks += (content.maxMarks ?? 5);
+    });
+
+    await prisma.assignment.update({
+      where: { id: assignmentId },
+      data: {
+        questions: toJson(newList),
+        maxMarks: assignment.maxMarks + addedMarks,
+        status: "READY"
+      }
+    });
+
+    return { success: true };
+  } catch (error) {
+    console.error("[generateAssignmentAIContent] failed:", error);
+    await prisma.assignment.update({
+      where: { id: assignmentId },
+      data: { status: "FAILED" }
+    });
+    throw error;
+  }
 }
 
 // ─────────────────────────────────────────────────────────
-// AI Question Generator (Gemini Flash)
+// HELPERS
 // ─────────────────────────────────────────────────────────
 
-interface GenerateQuestionsInput {
-  subjectName: string;
-  grade: string;
-  chapterName: string;
+async function generateQuestionsWithAI(input: {
   subtopics: string;
   difficulty: DifficultyLevel;
   count: number;
-}
-
-async function generateQuestionsWithAI(
-  input: GenerateQuestionsInput
-): Promise<AIGeneratedQuestion[]> {
+  state?: string | null;
+  district?: string | null;
+  schoolName?: string | null;
+}) {
   const prompt = buildQuestionGenerationPrompt(input);
-  return callGemini(geminiFlashModels, prompt, [], AIAssignmentOutputSchema);
+  const result = await callGemini(geminiFlashModels, prompt, {
+    userId: "system", // Usage tracking for generation
+    type: "ASSIGNMENT_GEN",
+  });
+
+  const parsed = AIAssignmentOutputSchema.safeParse(result);
+  if (!parsed.success) {
+    throw new Error("AI output failed validation.");
+  }
+
+  return parsed.data.questions;
 }
 
-// ─────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────
-
-function buildTitle({
-  subjectName,
-  type,
-  difficulty,
-  chapterName,
-}: {
-  subjectName: string;
-  type: AssignmentType;
-  difficulty: DifficultyLevel;
-  chapterName: string | null | undefined;
-}): string {
-  const typeLabel: Record<AssignmentType, string> = {
-    CHAPTER: chapterName ? `${chapterName} Test` : "Chapter Test",
-    SEMESTER: "Semester Test",
-    FULL_SYLLABUS: "Full Syllabus Test",
-    REMEDIAL: "Remedial Practice",
-    DIAGNOSTIC: "Diagnostic Assessment",
-  };
-
-  const diffLabel: Record<DifficultyLevel, string> = {
-    EASY: "Easy",
-    MEDIUM: "Medium",
-    HARD: "Hard",
-    MIXED: "",
-  };
-
-  const diffSuffix = diffLabel[difficulty] ? ` — ${diffLabel[difficulty]}` : "";
-  return `${subjectName} ${typeLabel[type]}${diffSuffix}`;
+function buildTitle({ subjectName, type, difficulty, chapterName }: any) {
+  const diffStr = difficulty.charAt(0) + difficulty.slice(1).toLowerCase();
+  if (type === "CHAPTER" && chapterName) {
+    return `${subjectName}: ${chapterName} (${diffStr})`;
+  }
+  return `${subjectName} Full Practice (${diffStr})`;
 }

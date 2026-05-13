@@ -16,6 +16,7 @@ import {
   MULTIMODAL_EVALUATION_PROMPT, 
   OVERALL_FEEDBACK_PROMPT 
 } from "@/prompts/evaluation";
+import { BATCH_EVALUATION_PROMPT, BatchEvaluationQuestion } from "@/prompts/batch-evaluation";
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -72,13 +73,19 @@ export async function evaluateSubmission(submissionId: string) {
   });
 
   if (submission.status === "EVALUATED") {
-    throw new Error("Submission already evaluated.");
+    return { skipped: true, reason: "Already evaluated" };
   }
+
+  // Update status to starting
+  await prisma.submission.update({
+    where: { id: submissionId },
+    data: { status: "ANALYZING_ANSWERS" },
+  });
 
   const rawAnswers = submission.answers as unknown as SubmittedAnswer[];
   const questionIds = rawAnswers.map((a) => a.questionId).filter(Boolean) as string[];
 
-  // 2. Fetch question data (if any use DB pointers)
+  // 2. Fetch question data
   const questions = await prisma.question.findMany({
     where: { id: { in: questionIds } },
     include: { subtopic: true },
@@ -87,183 +94,242 @@ export async function evaluateSubmission(submissionId: string) {
   const questionMap = Object.fromEntries(questions.map((q) => [q.id, q]));
   const assignmentQuestions = submission.assignment.questions as any[];
 
-  // 3. Evaluate each answer
+  // 3. Separate Objective and Subjective answers
   const evaluatedAnswers: EvaluatedAnswer[] = [];
-  let totalScore = 0;
-  const masteryUpdates: { subtopicId: string; isCorrect: boolean }[] = [];
+  const subjectiveQueue: BatchEvaluationQuestion[] = [];
+  const objectiveResults: EvaluatedAnswer[] = [];
 
   for (const answer of rawAnswers) {
-    let content: any, type: string, id: string | undefined, maxMarks: number, subtopicId: string | null = null;
+    let content: any, type: string, id: string | undefined, maxMarks: number;
 
     if (answer.questionId && questionMap[answer.questionId]) {
       const q = questionMap[answer.questionId];
       content = q.content;
       type = q.type;
       id = q.id;
-      maxMarks = (content as any).maxMarks || 1;
-      subtopicId = q.subtopicId;
+      maxMarks = (content as any).maxMarks || 5;
     } else {
       const inlineQ = assignmentQuestions[answer.questionIndex];
       if (!inlineQ) continue;
-
       content = {
          question: inlineQ.question,
-         options: inlineQ.options,
          correctAnswer: inlineQ.correctAnswer,
-         explanation: inlineQ.explanation || inlineQ.correctAnswer,
-         maxMarks: inlineQ.marks || inlineQ.maxMarks || 1,
+         maxMarks: inlineQ.marks || inlineQ.maxMarks || 5,
+         keyPoints: inlineQ.keyPoints,
       };
       type = inlineQ.type;
       id = undefined;
       maxMarks = content.maxMarks;
     }
 
-    let evaluated: EvaluatedAnswer;
-
     if (type === "MCQ" || type === "NUMERIC") {
-      // Auto-grade
-      const studentAns = String(answer.userAnswer || "").trim();
-      const modelAns = String(content.correctAnswer || "").trim();
-      const options = (content.options as string[]) || [];
-
-      // Helper: clean text for comparison (remove label prefixes, lowercase, trim)
-      const clean = (text: string) => {
-        return text
-          .replace(/^[A-Z][\.\)\-\s]+/, "") // Remove "A. ", "B) ", "C- "
-          .trim()
-          .toLowerCase();
-      };
-
-      const cleanModel = clean(modelAns);
-      const cleanStudent = clean(studentAns);
-
-      // Find the label (A, B, C, D) for the correct answer
-      let correctLabel = "";
-      if (type === "MCQ" && options.length > 0) {
-        const correctIdx = options.findIndex(
-          (opt) => clean(opt) === cleanModel || opt.trim().toLowerCase() === modelAns.toLowerCase()
-        );
-        if (correctIdx !== -1) {
-          correctLabel = String.fromCharCode(65 + correctIdx);
-        }
-      }
-
-      // Is correct if student gave:
-      // 1. The exact label (e.g. "B")
-      // 2. The exact text (e.g. "Rapid increase...")
-      // 3. The cleaned text (e.g. "rapid increase...")
-      const isCorrect =
-        studentAns.toUpperCase() === correctLabel ||
-        cleanStudent === cleanModel ||
-        studentAns.toLowerCase() === modelAns.toLowerCase();
-
-      evaluated = {
-        questionId: id,
-        questionIndex: answer.questionIndex,
-        userAnswer: answer.userAnswer,
-        isCorrect,
-        marksAwarded: isCorrect ? maxMarks : 0,
-        maxMarks: maxMarks,
-        feedback: isCorrect ? "Correct!" : "Incorrect.",
-        correction: isCorrect ? "" : `Correct answer: ${content.correctAnswer}`,
-        explanation: content.explanation,
-        markingBreakdown: [
-          {
-            component: "Correct Option Selection",
-            marks: isCorrect ? maxMarks : 0,
-            maxMarks: maxMarks,
-            status: isCorrect ? "FULL" : "NONE",
-            reason: isCorrect ? "The selected option matches the correct answer." : "The selected option does not match the correct answer."
-          }
-        ]
-      };
+      // Auto-grade Objective (Immediate)
+      objectiveResults.push(evaluateObjective(answer, content, id));
     } else {
-      // AI evaluation for SHORT_ANSWER / LONG_ANSWER
-      const aiResult = await evaluateSubjectiveAnswer({
+      // Queue for Batch AI Evaluation
+      subjectiveQueue.push({
+        questionId: id || `idx-${answer.questionIndex}`,
         question: content.question,
         modelAnswer: content.correctAnswer,
         studentAnswer: String(answer.userAnswer ?? ""),
         maxMarks: maxMarks,
-        grade: submission.assignment.subject.grade,
-        subject: submission.assignment.subject.name,
         keyPoints: content.keyPoints,
-      });
-
-      evaluated = {
-        questionId: id,
-        questionIndex: answer.questionIndex,
-        userAnswer: answer.userAnswer,
-        ...aiResult,
-        // Safety: Ensure marksAwarded never exceeds maxMarks or goes below 0
-        marksAwarded: Math.min(maxMarks, Math.max(0, aiResult.marksAwarded)),
-        maxMarks: maxMarks,
-      };
-    }
-
-    totalScore += evaluated.marksAwarded;
-    evaluatedAnswers.push(evaluated);
-
-    // Track for mastery update if it maps to a real subtopic
-    if (subtopicId) {
-      masteryUpdates.push({
-        subtopicId: subtopicId,
-        isCorrect: evaluated.isCorrect,
       });
     }
   }
 
+  // 4. Batch Evaluate Subjective Answers (Chunked)
+  const subjectiveResults = await evaluateSubjectiveBatch(
+    subjectiveQueue,
+    submission.assignment.subject.grade,
+    submission.assignment.subject.name,
+    submission.userId
+  );
+
+  // Combine results
+  evaluatedAnswers.push(...objectiveResults);
+  
+  // Map subjective results back to full EvaluatedAnswer format
+  for (const sub of subjectiveQueue) {
+    const aiResult = subjectiveResults.find(r => r.questionId === sub.questionId);
+    const originalAnswer = rawAnswers.find(a => a.questionId === sub.questionId || (sub.questionId.startsWith("idx-") && a.questionIndex === parseInt(sub.questionId.split("-")[1])));
+    
+    if (aiResult && originalAnswer) {
+      evaluatedAnswers.push({
+        questionId: originalAnswer.questionId,
+        questionIndex: originalAnswer.questionIndex,
+        userAnswer: originalAnswer.userAnswer,
+        ...aiResult,
+        marksAwarded: Math.min(sub.maxMarks, Math.max(0, aiResult.marksAwarded)),
+        maxMarks: sub.maxMarks,
+      });
+    }
+  }
+
+  // 5. Generate overall AI feedback
+  await prisma.submission.update({
+    where: { id: submissionId },
+    data: { status: "GENERATING_FEEDBACK" },
+  });
+
+  const totalScore = evaluatedAnswers.reduce((sum, a) => sum + a.marksAwarded, 0);
   const maxMarks = submission.maxMarks;
   const percentageScore = maxMarks > 0 ? Math.round((totalScore / maxMarks) * 100) : 0;
 
-  // 4. Generate overall AI feedback
   const overallFeedback = await generateOverallFeedback({
     subjectName: submission.assignment.subject.name,
     score: totalScore,
     maxMarks,
     percentageScore,
     evaluatedAnswers,
-    totalQuestionCount: questionIds.length,
+    totalQuestionCount: rawAnswers.length,
     grade: submission.assignment.subject.grade,
   });
 
-  // 5. Update submission record
-  await prisma.submission.update({
-    where: { id: submissionId },
-    data: {
-      answers: toJson(evaluatedAnswers),
-      totalScore,
+  // 6. DB Transaction: Finalize Submission + Mastery + Leaderboard
+  await prisma.$transaction(async (tx) => {
+    // A. Update Submission
+    await tx.submission.update({
+      where: { id: submissionId },
+      data: {
+        answers: toJson(evaluatedAnswers),
+        totalScore,
+        percentageScore,
+        aiFeedback: overallFeedback,
+        status: "EVALUATED",
+        evaluatedAt: new Date(),
+      },
+    });
+
+    // B. Update Mastery (Aggregated)
+    const masteryUpdates = evaluatedAnswers
+      .filter(a => a.questionId && questionMap[a.questionId]?.subtopicId)
+      .map(a => ({
+        subtopicId: questionMap[a.questionId!].subtopicId!,
+        isCorrect: a.isCorrect
+      }));
+    
+    const netMasteryGained = await updateMasteryInTransaction(tx, submission.userId, masteryUpdates);
+
+    // C. Update Leaderboard
+    const streak = submission.user.studyStreak?.currentStreak ?? 0;
+    const growthScore = calculateGrowthScore(
       percentageScore,
-      aiFeedback: overallFeedback,
-      status: "EVALUATED",
-      evaluatedAt: new Date(),
-    },
+      streak,
+      netMasteryGained,
+      submission.assignment.difficulty,
+      submission.timeTaken,
+      submission.assignment.timeLimit
+    );
+    await updateLeaderboardInTransaction(tx, submission.userId, growthScore);
   });
 
-  // 6. Update UserMastery for each subtopic and get net gain
-  const netMasteryGained = await updateMasteryAndCalculateGain(submission.userId, masteryUpdates);
-
-  // 7. Calculate Gamified Growth Score (Max 100 per submission)
-  const streak = submission.user.studyStreak?.currentStreak ?? 0;
-  const growthScore = calculateGrowthScore(
-    percentageScore,
-    streak,
-    netMasteryGained,
-    submission.assignment.difficulty,
-    submission.timeTaken,
-    submission.assignment.timeLimit
-  );
-
-  // 8. Update LeaderboardEntry (Cumulative Points)
-  await updateLeaderboard(submission.userId, growthScore);
-
-  return {
-    submissionId,
+  return { 
+    success: true, 
+    submissionId, 
     totalScore,
     maxMarks,
-    percentageScore: Math.round(percentageScore * 10) / 10,
+    percentageScore,
     aiFeedback: overallFeedback,
     answers: evaluatedAnswers,
   };
+}
+
+// ─────────────────────────────────────────────────────────
+// Helpers: Batch Evaluation & Objective Grading
+// ─────────────────────────────────────────────────────────
+
+function evaluateObjective(answer: SubmittedAnswer, content: any, id?: string): EvaluatedAnswer {
+  const studentAns = String(answer.userAnswer || "").trim();
+  const modelAns = String(content.correctAnswer || "").trim();
+  const options = (content.options as string[]) || [];
+  const maxMarks = content.maxMarks || 1;
+
+  const clean = (text: string) => text.replace(/^[A-Z][\.\)\-\s]+/, "").trim().toLowerCase();
+  const isCorrect = studentAns.toUpperCase() === (options.findIndex(o => clean(o) === clean(modelAns)) !== -1 ? String.fromCharCode(65 + options.findIndex(o => clean(o) === clean(modelAns))) : "") ||
+                    clean(studentAns) === clean(modelAns) ||
+                    studentAns.toLowerCase() === modelAns.toLowerCase();
+
+  return {
+    questionId: id,
+    questionIndex: answer.questionIndex,
+    userAnswer: answer.userAnswer,
+    isCorrect,
+    marksAwarded: isCorrect ? maxMarks : 0,
+    maxMarks,
+    feedback: isCorrect ? "Correct!" : "Incorrect.",
+    correction: isCorrect ? "" : `Correct answer: ${content.correctAnswer}`,
+    explanation: content.explanation || "",
+  };
+}
+
+async function evaluateSubjectiveBatch(
+  questions: BatchEvaluationQuestion[],
+  grade: string,
+  subject: string,
+  userId: string
+): Promise<any[]> {
+  if (questions.length === 0) return [];
+
+  const chunks = [];
+  for (let i = 0; i < questions.length; i += 5) {
+    chunks.push(questions.slice(i, i + 5));
+  }
+
+  const allResults = [];
+  for (const chunk of chunks) {
+    const prompt = BATCH_EVALUATION_PROMPT({ grade, subject, questions: chunk });
+    
+    try {
+      const results = await callGemini<any[]>(
+        geminiProModels, 
+        prompt, 
+        [], 
+        undefined, 
+        { userId, type: "EVALUATION" }
+      );
+      allResults.push(...results);
+    } catch (e) {
+      console.error("[EvaluationEngine] Batch failed, falling back to individual:", e);
+      // Fallback: Evaluate individually
+      for (const q of chunk) {
+        const individual = await evaluateSubjectiveAnswer({
+          ...q, grade, subject, studentAnswer: q.studentAnswer
+        });
+        allResults.push({ questionId: q.questionId, ...individual });
+      }
+    }
+  }
+  return allResults;
+}
+
+// Transaction-safe helpers (Logic moved from existing non-transaction functions)
+async function updateMasteryInTransaction(tx: any, userId: string, updates: { subtopicId: string; isCorrect: boolean }[]) {
+  let totalNetGain = 0;
+  for (const { subtopicId, isCorrect } of updates) {
+    const existing = await tx.userMastery.findUnique({ where: { userId_subtopicId: { userId, subtopicId } } });
+    if (!existing) {
+      const initialScore = isCorrect ? 20 : 5;
+      totalNetGain += initialScore;
+      await tx.userMastery.create({ data: { userId, subtopicId, masteryScore: initialScore, totalAttempts: 1, correctAttempts: isCorrect ? 1 : 0, consecutiveCorrect: isCorrect ? 1 : 0, lastPracticed: new Date(), difficultyCalibration: 1 } });
+    } else {
+      const oldScore = existing.masteryScore;
+      const newScore = isCorrect ? Math.min(100, oldScore + 5) : Math.max(0, oldScore - 3);
+      if (newScore > oldScore) totalNetGain += (newScore - oldScore);
+      await tx.userMastery.update({ where: { id: existing.id }, data: { totalAttempts: { increment: 1 }, correctAttempts: { increment: isCorrect ? 1 : 0 }, consecutiveCorrect: isCorrect ? { increment: 1 } : { set: 0 }, masteryScore: newScore, lastPracticed: new Date(), updatedAt: new Date() } });
+    }
+  }
+  return totalNetGain;
+}
+
+async function updateLeaderboardInTransaction(tx: any, userId: string, growthScore: number) {
+  const user = await tx.user.findUnique({ where: { id: userId }, select: { leaderboardOptIn: true } });
+  if (!user?.leaderboardOptIn) return;
+  const now = new Date();
+  const periods = [{ period: getWeekPeriod(now), periodType: "WEEKLY" as const }, { period: getMonthPeriod(now), periodType: "MONTHLY" as const }, { period: "ALL", periodType: "ALL_TIME" as const }];
+  for (const { period, periodType } of periods) {
+    await tx.leaderboardEntry.upsert({ where: { userId_period_periodType: { userId, period, periodType } }, create: { userId, period, periodType, totalScore: growthScore, submissionCount: 1 }, update: { totalScore: { increment: growthScore }, submissionCount: { increment: 1 }, updatedAt: new Date() } });
+  }
 }
 
 // ─────────────────────────────────────────────────────────

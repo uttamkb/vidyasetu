@@ -9,6 +9,9 @@ const updateProfileSchema = z.object({
   board: z.string().min(1, "Board is required"),
   image: z.string().optional().nullable(),
   leaderboardOptIn: z.boolean().optional(),
+  state: z.string().min(1, "State is required").max(100),
+  district: z.string().max(100).optional().nullable(),
+  school: z.string().max(200).optional().nullable(),
 });
 
 export async function PATCH(req: Request) {
@@ -33,6 +36,9 @@ export async function PATCH(req: Request) {
         board: validatedData.board,
         image: validatedData.image,
         leaderboardOptIn: validatedData.leaderboardOptIn,
+        state: validatedData.state,
+        district: validatedData.district,
+        school: validatedData.school,
       },
     });
 

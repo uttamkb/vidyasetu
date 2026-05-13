@@ -7,6 +7,9 @@ declare module "next-auth" {
       id: string;
       isOnboarded: boolean;
       role?: string;
+      state?: string | null;
+      district?: string | null;
+      school?: string | null;
     } & DefaultSession["user"];
   }
 }
@@ -16,5 +19,8 @@ declare module "next-auth/jwt" {
     id?: string;
     isOnboarded?: boolean;
     role?: string;
+    state?: string | null;
+    district?: string | null;
+    school?: string | null;
   }
 }

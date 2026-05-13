@@ -22,8 +22,9 @@ import {
   DialogTitle, 
   DialogTrigger 
 } from "@/components/ui/dialog";
-import { Pencil, Trophy, ImageIcon } from "lucide-react";
+import { Pencil, Trophy, ImageIcon, MapPin, School, Building2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
+import { INDIAN_STATES } from "@/lib/constants";
 
 import { useSession } from "next-auth/react";
 
@@ -39,6 +40,9 @@ export function EditProfileModal({ user }: { user: UserProfileData }) {
     board: user.board || "CBSE",
     image: user.image || "",
     leaderboardOptIn: user.leaderboardOptIn || false,
+    state: user.state || "",
+    district: user.district || "",
+    school: user.school || "",
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -59,6 +63,9 @@ export function EditProfileModal({ user }: { user: UserProfileData }) {
         await update({ 
           name: formData.name,
           image: formData.image,
+          state: formData.state,
+          district: formData.district,
+          school: formData.school,
         });
         
         setOpen(false);
@@ -133,6 +140,44 @@ export function EditProfileModal({ user }: { user: UserProfileData }) {
                 <SelectItem value="State Board">State Board</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="state">State</Label>
+            <Select 
+              value={formData.state} 
+              onValueChange={(value) => setFormData({ ...formData, state: value })}
+            >
+              <SelectTrigger id="state">
+                <SelectValue placeholder="Select state" />
+              </SelectTrigger>
+              <SelectContent className="max-h-72">
+                {INDIAN_STATES.map((s) => (
+                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="district">District</Label>
+              <Input 
+                id="district" 
+                value={formData.district} 
+                onChange={(e) => setFormData({ ...formData, district: e.target.value })} 
+                placeholder="e.g. Pune" 
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="school">School Name</Label>
+              <Input 
+                id="school" 
+                value={formData.school} 
+                onChange={(e) => setFormData({ ...formData, school: e.target.value })} 
+                placeholder="e.g. Vydehi School" 
+              />
+            </div>
           </div>
 
           <div className="space-y-2">

@@ -13,6 +13,9 @@ export interface QuestionGenerationContext {
   subtopics: string;
   difficulty: DifficultyLevel;
   count: number;
+  state?: string | null;
+  district?: string | null;
+  schoolName?: string | null;
 }
 
 export function buildQuestionGenerationPrompt(ctx: QuestionGenerationContext): string {
@@ -27,6 +30,17 @@ export function buildQuestionGenerationPrompt(ctx: QuestionGenerationContext): s
 You are a senior CBSE/NCERT examination paper setter and academic evaluator with expertise in designing Class ${ctx.grade} ${ctx.subjectName} question papers aligned with the latest CBSE pattern, NCERT learning outcomes, competency-based education framework, and real board/school assessment trends.
 
 Your responsibility is to refactor existing logic without breaking existing code and generate HIGH-PROBABILITY EXAM PRACTICE QUESTIONS by simulating how experienced CBSE paper setters design actual class tests, periodic tests, half-yearly exams, pre-boards, and annual examinations.
+
+STUDENT CONTEXT:
+- School: ${ctx.schoolName || "Unknown/Standard"}
+- District: ${ctx.district || "Unknown"}
+- State: ${ctx.state || "National/CBSE"}
+
+LOCALIZATION RULES:
+1. If specific patterns for ${ctx.schoolName} are known, prioritize questions that reflect its typical assessment style (difficulty, question types, focus areas).
+2. If school patterns are unknown, align with trends from ${ctx.district} and ${ctx.state}.
+3. Fallback to standard CBSE/NCERT national patterns if no regional data is available.
+4. Maintain academic rigor consistent with ${ctx.schoolName}'s regional standing while strictly adhering to NCERT boundaries.
 
 You must internally emulate analysis of:
 - Last 5 years CBSE question patterns

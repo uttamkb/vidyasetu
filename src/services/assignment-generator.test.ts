@@ -74,7 +74,7 @@ describe("assignment-generator", () => {
     vi.clearAllMocks();
   });
 
-  it("generates an assignment primarily from the question bank", async () => {
+  it("generates an assignment skeleton primarily from the question bank", async () => {
     // Mock subject fetch
     (prisma.subject.findUniqueOrThrow as any).mockResolvedValue(mockSubject);
     
@@ -93,44 +93,21 @@ describe("assignment-generator", () => {
     ];
     (prisma.question.findMany as any).mockResolvedValue(mockBankQuestions);
 
-    // Mock AI generation (for the 1 remaining question: 5 - floor(4 * 0.7) = 5 - 2 = 3)
-    // Wait, the logic is: bankQCount = min(4, floor(5 * 0.7) = 3) = 3.
-    // aiQCount = 5 - 3 = 2.
-    (callGemini as any).mockResolvedValue([
-      {
-        type: "MCQ",
-        bloomLevel: "UNDERSTAND",
-        difficulty: 3,
-        content: { question: "AI Q1", correctAnswer: "A", explanation: "...", maxMarks: 5 },
-      },
-      {
-        type: "SHORT_ANSWER",
-        bloomLevel: "APPLY",
-        difficulty: 3,
-        content: { question: "AI Q2", correctAnswer: "...", explanation: "...", maxMarks: 5 },
-      },
-    ]);
-
-    // Mock question creation in transaction
-    (prisma.question.create as any).mockImplementation(({ data }: any) => ({
-      id: `ai-${data.content.question}`,
-      ...data,
-    }));
-
     // Mock assignment creation
     (prisma.assignment.create as any).mockResolvedValue({
       id: "asgn-1",
       title: "Mathematics Number Systems Test — Medium",
       ...mockInput,
+      subject: mockSubject,
     });
 
     const result = await generateAssignment(mockInput);
 
     expect(result.assignment.id).toBe("asgn-1");
-    expect(result.questionList.length).toBe(5);
+    expect(result.aiQCount).toBeGreaterThan(0);
     expect(prisma.question.findMany).toHaveBeenCalled();
-    expect(callGemini).toHaveBeenCalled();
-    expect(prisma.$transaction).toHaveBeenCalled();
+    // AI generation and transaction should NOT happen in the skeleton phase
+    expect(callGemini).not.toHaveBeenCalled();
   });
 
   it("throws error if no subtopics are found in scope", async () => {
@@ -139,15 +116,6 @@ describe("assignment-generator", () => {
       chapters: [],
     });
 
-    await expect(generateAssignment(mockInput)).rejects.toThrow("No subtopics found for the given scope.");
-  });
-
-  it("throws error if AI generation fails and questions are needed", async () => {
-    (prisma.subject.findUniqueOrThrow as any).mockResolvedValue(mockSubject);
-    (prisma.userMastery.findMany as any).mockResolvedValue([]);
-    (prisma.question.findMany as any).mockResolvedValue([]); // Empty bank, need 5 AI questions
-    (callGemini as any).mockResolvedValue([]); // AI fails
-
-    await expect(generateAssignment(mockInput)).rejects.toThrow("AI failed to generate questions. Please try again.");
+    await expect(generateAssignment({ ...mockInput, type: "FULL", chapterId: undefined })).rejects.toThrow("No subtopics found for the given scope.");
   });
 });

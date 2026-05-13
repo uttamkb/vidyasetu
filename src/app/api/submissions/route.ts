@@ -5,6 +5,7 @@ import { evaluateSubmission } from "@/services/evaluation-engine";
 import { z } from "zod";
 import { toJson } from "@/lib/prisma-json";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { inngest } from "@/inngest/client";
 
 const submitSchema = z.object({
   assignmentId: z.string().uuid(),
@@ -70,17 +71,20 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // Evaluate asynchronously (trigger evaluation in background)
-    // In production: use a job queue (BullMQ). For MVP: evaluate inline.
-    const result = await evaluateSubmission(submission.id);
+    // Evaluate asynchronously via Inngest background job
+    await inngest.send({
+      name: "app/submission.evaluate",
+      data: { 
+        submissionId: submission.id,
+        userId: session.user.id
+      },
+    });
 
     return NextResponse.json({
       success: true,
       submissionId: submission.id,
-      totalScore: result.totalScore,
-      maxMarks: assignment.maxMarks,
-      percentageScore: result.percentageScore,
-      status: "EVALUATED",
+      status: "SUBMITTED",
+      message: "Submission received. Grading in progress..."
     });
   } catch (err) {
     console.error("[POST /api/submissions]", err);

@@ -111,6 +111,38 @@ Generate a new personalized assignment (Practice Test).
 }
 ```
 
+> [!NOTE]
+> The generation logic automatically retrieves the student's **School**, **District**, and **State** from their profile to emulate localized examination patterns.
+
+---
+
+## 👤 Profile & Settings
+
+### PATCH `/api/profile`
+Update student profile and academic settings.
+
+**Request Body:**
+```json
+{
+  "name": "string",
+  "grade": "8-12",
+  "board": "CBSE | ICSE | State Board",
+  "state": "string",
+  "district": "string?",
+  "school": "string?",
+  "image": "url?",
+  "leaderboardOptIn": true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": { "id": "uuid", "name": "..." }
+}
+```
+
 ### POST `/api/submissions`
 Submit an assignment for evaluation.
 
@@ -157,12 +189,15 @@ Returns the complete mastery map with status indicators.
           "topics": [
             {
               "name": "Inertia",
+              "avgMastery": 82,
               "subtopics": [
                 {
                   "name": "Concept of Inertia",
                   "masteryScore": 85,
                   "status": "mastered",
-                  "totalAttempts": 12
+                  "totalAttempts": 12,
+                  "correctAttempts": 10,
+                  "lastPracticed": "2026-05-12T10:00:00Z"
                 }
               ]
             }
@@ -218,10 +253,28 @@ Retrieve ranked student leaderboard.
 
 ---
 
-## 🛠️ System & Seed
+## 🛠️ System & Admin
 
-### POST `/api/seed` [ADMIN ONLY]
-Manually trigger curriculum or badge seeding.
+### GET `/api/admin/usage` [ADMIN ONLY]
+Returns daily AI usage metrics across all users and models.
+
+**Response:**
+```json
+{
+  "usage": [
+    {
+      "date": "2026-05-13",
+      "modelName": "gemini-2.5-pro",
+      "type": "EVALUATION",
+      "totalCalls": 150,
+      "totalTokens": 450000
+    }
+  ]
+}
+```
+
+### POST `/api/admin/seed` [ADMIN ONLY]
+Manually trigger curriculum or badge seeding. Supports Inngest background workers.
 
 ### GET `/api/health` [PUBLIC]
-Returns system health and database connectivity status.
+Returns system health, database connectivity, and Inngest client status.

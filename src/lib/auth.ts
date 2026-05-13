@@ -85,13 +85,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               where: { email: user.email },
               update: { name: user.name, image: user.image },
               create: { email: user.email, name: user.name, image: user.image, grade: "9", role: "STUDENT" },
-              select: { id: true, isOnboarded: true, role: true, name: true, image: true },
+              select: { id: true, isOnboarded: true, role: true, name: true, image: true, state: true, district: true, school: true },
             });
             token.id = dbUser.id;
             token.name = dbUser.name;
             token.image = dbUser.image;
             token.isOnboarded = dbUser.isOnboarded;
             token.role = dbUser.role;
+            token.state = dbUser.state;
+            token.district = dbUser.district;
+            token.school = dbUser.school;
           } catch (err) {
             console.error("[auth] jwt callback DB sync failed:", err);
             token.id = user.id;
@@ -108,6 +111,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (session.name !== undefined) token.name = session.name;
         if (session.image !== undefined) token.image = session.image;
         if (session.isOnboarded !== undefined) token.isOnboarded = session.isOnboarded;
+        if (session.state !== undefined) token.state = session.state;
+        if (session.district !== undefined) token.district = session.district;
+        if (session.school !== undefined) token.school = session.school;
       }
 
       return token;
@@ -124,6 +130,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.image = token.image as string;
         session.user.isOnboarded = (token.isOnboarded as boolean) ?? false;
         session.user.role = (token.role as string) ?? "STUDENT";
+        session.user.state = token.state as string | null;
+        session.user.district = token.district as string | null;
+        session.user.school = token.school as string | null;
       }
       return session;
     },

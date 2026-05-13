@@ -1,5 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { ZodSchema } from "zod";
+import { trackAIUsage, AICallType } from "@/services/usage-tracker";
 
 // ─────────────────────────────────────────────────────────────
 // Singleton — prevents multiple client instances during HMR
@@ -98,7 +99,8 @@ export async function callGemini<T>(
   models: any[],
   prompt: string | Array<any>,
   fallback: T,
-  schema?: ZodSchema<T>
+  schema?: ZodSchema<T>,
+  tracking?: { userId: string; type: AICallType }
 ): Promise<T> {
   let lastError = null;
 
@@ -109,6 +111,18 @@ export async function callGemini<T>(
       const result = await model.generateContent(prompt);
       const text = result.response.text();
       const raw = parseGeminiJson<unknown>(text);
+      const usage = (result.response as any).usageMetadata;
+
+      // Log usage if tracking is provided
+      if (tracking) {
+        trackAIUsage({
+          userId: tracking.userId,
+          modelName,
+          type: tracking.type,
+          // Use actual tokens from Gemini response, fallback to rough estimate
+          estimatedTokens: usage?.totalTokenCount ?? Math.ceil(((typeof prompt === 'string' ? prompt.length : 0) + text.length) / 4),
+        }).catch((e) => console.error("[Gemini] Tracking failed:", e));
+      }
 
       if (schema) {
         return schema.parse(raw); // throws ZodError on invalid AI output

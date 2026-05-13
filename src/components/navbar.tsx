@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -23,8 +22,10 @@ import {
   LogOut,
   Menu,
 } from "lucide-react";
-import { VidyaSetuLogo } from "@/components/ui/logo";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { VidyaSetuLogo } from "@/components/ui/logo";
+import { cn } from "@/lib/utils";
 import { useState } from "react";
 
 const navItems = [
@@ -56,11 +57,9 @@ export function Navbar({ user: initialUser }: { user: NavbarUser }) {
       <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex h-16 items-center">
         <div className="mr-4 flex items-center gap-2">
           <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger asChild>
-              <Button variant="ghost" size="icon" className="mr-2 lg:hidden">
-                <Menu className="h-5 w-5" />
-                <span className="sr-only">Toggle menu</span>
-              </Button>
+            <SheetTrigger className={cn(buttonVariants({ variant: "ghost", size: "icon" }), "mr-2 lg:hidden")}>
+              <Menu className="h-5 w-5" />
+              <span className="sr-only">Toggle menu</span>
             </SheetTrigger>
             <SheetContent side="left" className="w-64">
               <div className="flex items-center gap-2 mb-6 group">

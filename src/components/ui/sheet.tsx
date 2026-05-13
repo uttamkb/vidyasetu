@@ -11,8 +11,29 @@ function Sheet({ ...props }: SheetPrimitive.Root.Props) {
   return <SheetPrimitive.Root data-slot="sheet" {...props} />
 }
 
-function SheetTrigger({ ...props }: SheetPrimitive.Trigger.Props) {
-  return <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props} />
+function SheetTrigger({
+  asChild,
+  children,
+  ...props
+}: SheetPrimitive.Trigger.Props & { asChild?: boolean }) {
+  // Explicitly remove asChild to prevent leakage to DOM elements
+  const rest = props as any;
+  delete rest.asChild;
+
+  if (asChild && React.isValidElement(children)) {
+    return (
+      <SheetPrimitive.Trigger
+        data-slot="sheet-trigger"
+        render={children}
+        {...rest}
+      />
+    )
+  }
+  return (
+    <SheetPrimitive.Trigger data-slot="sheet-trigger" {...props}>
+      {children}
+    </SheetPrimitive.Trigger>
+  )
 }
 
 function SheetClose({ ...props }: SheetPrimitive.Close.Props) {

@@ -94,6 +94,7 @@ model User {
   createdAssignments  Assignment[] @relation("AssignmentAuthor")
   userBadges          UserBadge[]
   leaderboardEntries  LeaderboardEntry[]
+  aiUsage             UserAIUsage[]
 
   @@map("users")
 }
@@ -240,6 +241,12 @@ enum DifficultyLevel {
   MIXED
 }
 
+enum AssignmentStatus {
+  GENERATING
+  READY
+  FAILED
+}
+
 model Assignment {
   id          String         @id @default(uuid())
   title       String
@@ -264,6 +271,7 @@ model Assignment {
   timeLimit   Int?           // minutes; null = untimed
 
   isAIGenerated Boolean      @default(false)
+  status        AssignmentStatus @default(READY)
   authorId      String?
   author        User?          @relation("AssignmentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
   targetGrade   String       @default("9")
@@ -285,6 +293,8 @@ model Assignment {
 enum SubmissionStatus {
   IN_PROGRESS
   SUBMITTED
+  ANALYZING_ANSWERS
+  GENERATING_FEEDBACK
   EVALUATED
 }
 
@@ -626,4 +636,23 @@ model Task {
   updatedAt   DateTime @updatedAt
 
   @@map("tasks")
+}
+// ============================================================
+// AI Usage Tracking
+// ============================================================
+
+model UserAIUsage {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date            DateTime @default(now()) // Stored as start of day
+  modelName       String   // e.g., "gemini-2.5-pro"
+  type            String   // "EVALUATION" | "GENERATION" | "CONTENT_SEED"
+  callCount       Int      @default(0)
+  estimatedTokens Int      @default(0)
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, date, modelName, type])
+  @@index([userId, date])
+  @@map("user_ai_usage")
 }

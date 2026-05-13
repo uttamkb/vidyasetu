@@ -17,6 +17,7 @@ import {
   BookOpen,
   Flame,
   Globe,
+  MapPin,
 } from "lucide-react";
 
 async function getProfileData(userId: string) {
@@ -107,6 +108,9 @@ export default async function ProfilePage() {
               image: user.image,
               grade: user.grade,
               board: user.board,
+              state: user.state,
+              district: user.district,
+              school: user.school,
             }} />
           </div>
         </CardContent>
@@ -213,6 +217,30 @@ export default async function ProfilePage() {
             <div>
               <p className="text-sm font-medium">Board</p>
               <p className="text-sm text-muted-foreground">{user.board}</p>
+            </div>
+          </div>
+          <Separator />
+          <div className="flex items-center gap-3">
+            <Globe className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-medium">State</p>
+              <p className="text-sm text-muted-foreground">{user.state || "Not set"}</p>
+            </div>
+          </div>
+          <Separator />
+          <div className="flex items-center gap-3">
+            <MapPin className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-medium">District</p>
+              <p className="text-sm text-muted-foreground">{user.district || "Not set"}</p>
+            </div>
+          </div>
+          <Separator />
+          <div className="flex items-center gap-3">
+            <School className="h-4 w-4 text-muted-foreground" />
+            <div>
+              <p className="text-sm font-medium">School</p>
+              <p className="text-sm text-muted-foreground">{user.school || "Not set"}</p>
             </div>
           </div>
           <Separator />

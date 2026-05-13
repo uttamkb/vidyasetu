@@ -31,6 +31,12 @@ vi.mock("@/lib/rate-limit", () => ({
   checkRateLimit: vi.fn(() => ({ allowed: true, resetInMs: 0 })),
 }));
 
+vi.mock("@/inngest/client", () => ({
+  inngest: {
+    send: vi.fn(),
+  },
+}));
+
 vi.mock("@/lib/prisma-json", () => ({
   toJson: vi.fn((val) => val),
 }));
@@ -56,12 +62,11 @@ describe("Submissions API", () => {
       expect(res.status).toBe(401);
     });
 
-    it("creates a submission and returns evaluated result", async () => {
+    it("creates a submission and triggers background evaluation", async () => {
       (auth as any).mockResolvedValue({ user: { id: "user-1" } });
-      (prisma.assignment.findUniqueOrThrow as any).mockResolvedValue({ maxMarks: 10 });
+      (prisma.assignment.findUniqueOrThrow as any).mockResolvedValue({ id: "asgn-1", maxMarks: 10 });
       (prisma.submission.findFirst as any).mockResolvedValue(null);
       (prisma.submission.create as any).mockResolvedValue({ id: "sub-1" });
-      (evaluateSubmission as any).mockResolvedValue({ totalScore: 8, percentageScore: 80 });
 
       const req = new NextRequest("http://localhost/api/submissions", {
         method: "POST",
@@ -71,9 +76,16 @@ describe("Submissions API", () => {
       const data = await res.json();
 
       expect(res.status).toBe(200);
-      expect(data.status).toBe("EVALUATED");
-      expect(data.totalScore).toBe(8);
-      expect(evaluateSubmission).toHaveBeenCalledWith("sub-1");
+      expect(data.status).toBe("SUBMITTED");
+      expect(data.message).toContain("Grading in progress");
+      
+      // Verification: evaluateSubmission NOT called directly, but Inngest event sent
+      expect(evaluateSubmission).not.toHaveBeenCalled();
+      const { inngest } = await import("@/inngest/client");
+      expect(inngest.send).toHaveBeenCalledWith(expect.objectContaining({
+        name: "app/submission.evaluate",
+        data: expect.objectContaining({ submissionId: "sub-1" })
+      }));
     });
   });
 

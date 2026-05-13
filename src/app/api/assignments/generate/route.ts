@@ -5,6 +5,7 @@ import { generateAssignment } from "@/services/assignment-generator";
 import { AssignmentType, DifficultyLevel } from "@prisma/client";
 import { z } from "zod";
 import { checkRateLimit } from "@/lib/rate-limit";
+import { inngest } from "@/inngest/client";
 
 const generateSchema = z.object({
   subjectId: z.string().min(1, "Invalid subject ID"),
@@ -53,25 +54,37 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const { assignment, questionList } = await generateAssignment({
+    const { assignment, aiQCount, topicNames, chapterName, location } = await generateAssignment({
       userId: session.user.id,
       ...parsed.data,
     });
 
+    if (aiQCount > 0) {
+      await inngest.send({
+        name: "app/assignment.generate",
+        data: {
+          assignmentId: assignment.id,
+          userId: session.user.id,
+          aiQCount,
+          input: {
+            subjectName: assignment.subject.name,
+            grade: assignment.subject.grade,
+            chapterName: chapterName || "Full Syllabus",
+            subtopics: topicNames,
+            difficulty: assignment.difficulty,
+            state: location.state,
+            district: location.district,
+            schoolName: location.school,
+          }
+        }
+      });
+    }
+
     return NextResponse.json({
-      assignment: {
-        id: assignment.id,
-        title: assignment.title,
-        type: assignment.type,
-        difficulty: assignment.difficulty,
-        maxMarks: assignment.maxMarks,
-        timeLimit: assignment.timeLimit,
-        isAIGenerated: assignment.isAIGenerated,
-        subject: assignment.subject,
-        chapter: assignment.chapter,
-        questionCount: questionList.length,
-        createdAt: assignment.createdAt,
-      },
+      success: true,
+      assignmentId: assignment.id,
+      status: assignment.status,
+      message: aiQCount > 0 ? "Generating your assignment..." : "Assignment ready!"
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Generation failed";
