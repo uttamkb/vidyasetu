@@ -26,6 +26,8 @@ RUN npx prisma generate
 # Build Next.js app
 # Disable telemetry during build
 ENV NEXT_TELEMETRY_DISABLED 1
+# Allow Inngest to bypass security checks during build-time module evaluation
+ENV INNGEST_DEV true
 RUN npm run build
 
 # Stage 3: Runner

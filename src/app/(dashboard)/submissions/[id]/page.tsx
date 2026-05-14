@@ -218,7 +218,9 @@ export default async function SubmissionPage({ params }: { params: Promise<{ id:
                       <p className="text-[10px] uppercase tracking-wider font-bold text-slate-500 mb-1">Your Answer</p>
                       <p className="text-sm font-bold text-slate-900">
                         {answer?.userAnswer 
-                          ? (studentLabel ? `${studentLabel}. ${studentOptionText}` : String(answer.userAnswer)) 
+                          ? (studentLabel && String(answer.userAnswer).length <= 2 
+                              ? `${studentLabel}. ${studentOptionText}` 
+                              : String(answer.userAnswer)) 
                           : "Not answered"}
                       </p>
                     </div>

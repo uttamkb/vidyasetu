@@ -240,15 +240,67 @@ export async function evaluateSubmission(submissionId: string) {
 // ─────────────────────────────────────────────────────────
 
 function evaluateObjective(answer: SubmittedAnswer, content: any, id?: string): EvaluatedAnswer {
-  const studentAns = String(answer.userAnswer || "").trim();
-  const modelAns = String(content.correctAnswer || "").trim();
+  const studentRaw = String(answer.userAnswer || "").trim();
+  const modelRaw = String(content.correctAnswer || "").trim();
   const options = (content.options as string[]) || [];
   const maxMarks = content.maxMarks || 1;
 
-  const clean = (text: string) => text.replace(/^[A-Z][\.\)\-\s]+/, "").trim().toLowerCase();
-  const isCorrect = studentAns.toUpperCase() === (options.findIndex(o => clean(o) === clean(modelAns)) !== -1 ? String.fromCharCode(65 + options.findIndex(o => clean(o) === clean(modelAns))) : "") ||
-                    clean(studentAns) === clean(modelAns) ||
-                    studentAns.toLowerCase() === modelAns.toLowerCase();
+  // Normalizes text by removing labels (A., B., 1.), extra spaces, and casing
+  const normalize = (text: string) => {
+    return text
+      .replace(/^[a-zA-Z0-9][\.\)\-\s]+/, "") // Strip "A.", "1.", "a)"
+      .replace(/\s+/g, "")                    // Strip all whitespace
+      .toLowerCase();
+  };
+
+  const studentNormalized = normalize(studentRaw);
+  const modelNormalized = normalize(modelRaw);
+
+  // 1. Direct normalized match (handles "B. Binomial" vs "Binomial")
+  let isCorrect = studentNormalized === modelNormalized;
+
+  // 2. Index-based match (handles if student just wrote "B" or "2")
+  if (!isCorrect && options.length > 0) {
+    const studentAsIndex = studentRaw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    
+    // Check if student picked a letter (A, B, C...)
+    const modelIndex = options.findIndex(o => normalize(o) === modelNormalized);
+    if (modelIndex !== -1) {
+      const modelLetter = String.fromCharCode(65 + modelIndex); // "A", "B"...
+      if (studentAsIndex === modelLetter || studentNormalized === normalize(options[modelIndex])) {
+        isCorrect = true;
+      }
+    }
+
+    // Check if student picked a number (1, 2, 3...)
+    if (!isCorrect && /^\d+$/.test(studentAsIndex)) {
+      const studentNum = parseInt(studentAsIndex);
+      if (studentNum === modelIndex + 1) isCorrect = true;
+    }
+  }
+
+  // 3. Reverse match: Student wrote text, Model is just a letter
+  if (!isCorrect && modelRaw.length === 1 && options.length > 0) {
+     const modelIndex = modelRaw.toUpperCase().charCodeAt(0) - 65;
+     if (modelIndex >= 0 && modelIndex < options.length) {
+       if (studentNormalized === normalize(options[modelIndex])) isCorrect = true;
+     }
+  }
+
+  // DIAGNOSTIC LOG: This will show up in your SystemLog table
+  import("@/lib/logger").then(({ logger }) => {
+    logger.info(`Grading MCQ Q${answer.questionIndex}`, {
+      category: "DB",
+      metadata: {
+        studentRaw,
+        modelRaw,
+        studentNormalized,
+        modelNormalized,
+        isCorrect,
+        optionsCount: options.length
+      }
+    });
+  });
 
   return {
     questionId: id,

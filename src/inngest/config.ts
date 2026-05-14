@@ -33,7 +33,9 @@ function validateInngestConfig(): InngestConfig {
   const isDevMode = inngestDev === 'true';
 
   // 2. Prevent insecure production deployments
-  if (nodeEnv === 'production' && isDevMode) {
+  // Allow INNGEST_DEV=true during the build phase to satisfy module evaluation during pre-rendering
+  const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
+  if (nodeEnv === 'production' && isDevMode && !isBuildPhase) {
     throw new Error(
       '[Inngest] SECURITY ALERT: Cannot enable INNGEST_DEV in production environment (NODE_ENV=production).'
     );

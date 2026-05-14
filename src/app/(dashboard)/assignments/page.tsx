@@ -243,7 +243,8 @@ function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
               month: 'short',
               hour: '2-digit',
               minute: '2-digit',
-              hour12: true
+              hour12: true,
+              timeZone: 'Asia/Kolkata'
             }).format(new Date(a.createdAt))}
           </div>
           {a.dueDate && (

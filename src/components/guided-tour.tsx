@@ -1,12 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Step, STATUS } from "react-joyride";
-import * as ReactJoyride from "react-joyride";
+import { Joyride as OriginalJoyride, Step, STATUS } from "react-joyride";
+const Joyride = OriginalJoyride as any;
 import { useSearchParams, useRouter } from "next/navigation";
-
-// Extract the component securely regardless of CJS/ESM interop issues
-const JoyrideComponent: any = (ReactJoyride as any).default || (ReactJoyride as any).Joyride || ReactJoyride;
 
 export function GuidedTour() {
   const [run, setRun] = useState(false);
@@ -62,7 +59,7 @@ export function GuidedTour() {
   if (!run) return null;
 
   return (
-    <JoyrideComponent
+    <Joyride
       steps={steps}
       run={run}
       continuous={true}
@@ -73,7 +70,7 @@ export function GuidedTour() {
           primaryColor: "#3b82f6", // tailwind blue-500
           zIndex: 1000,
         },
-      }}
+      } as any}
     />
   );
 }

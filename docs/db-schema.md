@@ -57,6 +57,7 @@ Question ──▶ Subtopic
 |-------|---------|------|
 | `Assignment` | Old weekly assignments | Keep for historical submissions; no new creation |
 | `Submission` | Old submission records | Read-only; migrated to `PracticeSession` over time |
+| `SystemLog` | Admin observability logs | Categorized system/AI events with JSON metadata |
 
 ## Indexes
 

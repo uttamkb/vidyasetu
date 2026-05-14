@@ -13,13 +13,17 @@ export const BATCH_EVALUATION_PROMPT = (params: {
   questions: BatchEvaluationQuestion[];
 }) => `
 You are a senior CBSE Class ${params.grade} ${params.subject} examiner. 
-Evaluate the following student answers fairly, focusing on conceptual understanding and keyword presence.
+Evaluate the following student answers fairly, focusing on conceptual understanding, numerical accuracy, and logical derivation.
 
 ### Evaluation Guidelines:
-1. SEMANTIC MATCHING: Do NOT require exact textbook wording. award marks for correct conceptual explanation.
-2. OCR TOLERANCE: Do not penalize for obvious transcription glitches (e.g., '0' instead of 'O').
-3. PARTIAL CREDIT: Award marks in increments of 0.5 for partially correct responses.
-4. INDEPENDENT GRADING: Evaluate each question independently.
+1. SEMANTIC MATCHING: Do NOT require exact textbook wording. Award marks for correct conceptual explanation.
+2. MATHEMATICAL RIGOR (CRITICAL):
+   - TRACE STEPS: For math/science, trace the algebraic derivation even if written in a single line or with messy notation (e.g., multiple '=' signs).
+   - RESULT PRIORITIZATION: If the final answer (e.g., "a=1") is correct and corresponds to the model answer, award at least 80-100% marks unless the derivation is clearly nonsensical.
+   - MILESTONE GRADING: Award partial marks for correct substitutions (e.g., substituting x=1) or correct initial equations even if the final calculation is wrong.
+3. OCR TOLERANCE: Do not penalize for obvious transcription glitches (e.g., '^' for power, '*' for multiply).
+4. PARTIAL CREDIT: Award marks in increments of 0.5 for partially correct responses.
+5. INDEPENDENT GRADING: Evaluate each question independently.
 
 ### Questions to Evaluate:
 ${params.questions.map((q, i) => `

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { toJson } from "@/lib/prisma-json";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { inngest } from "@/inngest/client";
+import { logger } from "@/lib/logger";
 
 const submitSchema = z.object({
   assignmentId: z.string().uuid(),
@@ -53,9 +54,6 @@ export async function POST(req: NextRequest) {
       select: { maxMarks: true },
     });
 
-    // Allow multiple submissions for the same assignment (retesting)
-
-
     // Create submission record
     const submission = await prisma.submission.create({
       data: {
@@ -80,6 +78,12 @@ export async function POST(req: NextRequest) {
       },
     });
 
+    logger.success("Submission received and evaluation triggered", {
+      category: "INNGEST",
+      userId: session.user.id,
+      metadata: { submissionId: submission.id, assignmentId }
+    });
+
     return NextResponse.json({
       success: true,
       submissionId: submission.id,
@@ -87,8 +91,15 @@ export async function POST(req: NextRequest) {
       message: "Submission received. Grading in progress..."
     });
   } catch (err) {
-    console.error("[POST /api/submissions]", err);
-    return NextResponse.json({ error: "Submission failed" }, { status: 500 });
+    logger.error("Submission processing failed", {
+      category: "DB",
+      userId: session.user.id,
+      metadata: { error: err instanceof Error ? err.message : String(err), assignmentId, stack: err instanceof Error ? err.stack : undefined }
+    });
+    return NextResponse.json(
+      { error: "Submission failed", details: err instanceof Error ? err.message : "Internal error" },
+      { status: 500 }
+    );
   }
 }
 

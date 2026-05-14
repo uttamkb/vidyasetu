@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 # ==============================================================================
 # VidyaSetu GCP Deployment Script
@@ -60,9 +61,17 @@ if [ $? -ne 0 ]; then
 fi
 
 # 5. Grant Secret Access to the Service Account
-echo -e "${BLUE}Granting Secret Manager access...${NC}"
+echo -e "${BLUE}Ensuring secrets exist and granting Secret Manager access...${NC}"
 SECRETS=("DATABASE_URL" "AUTH_SECRET" "GEMINI_API_KEY" "AUTH_GOOGLE_ID" "AUTH_GOOGLE_SECRET" "INNGEST_EVENT_KEY" "INNGEST_SIGNING_KEY")
 for secret in "${SECRETS[@]}"; do
+    # Create secret if it doesn't exist
+    gcloud secrets describe $secret --project=$PROJECT_ID > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        echo "Creating secret $secret..."
+        gcloud secrets create $secret --project=$PROJECT_ID
+    fi
+
+    # Grant access
     gcloud secrets add-iam-policy-binding $secret \
         --member="serviceAccount:${RUNNER_SA}@${PROJECT_ID}.iam.gserviceaccount.com" \
         --role="roles/secretmanager.secretAccessor" \
@@ -98,7 +107,17 @@ gcloud builds submit --tag $IMAGE_TAG .
 
 # 8. Deployment to Cloud Run
 echo -e "${BLUE}Deploying to Cloud Run...${NC}"
-gcloud run deploy $SERVICE_NAME \
+
+# Get current service URL if it exists
+CURRENT_URL=$(gcloud run services describe $SERVICE_NAME --region $REGION --format 'value(status.url)' 2>/dev/null || echo "")
+if [ -z "$CURRENT_URL" ]; then
+    CURRENT_URL="https://${SERVICE_NAME}-${PROJECT_ID}.a.run.app" 
+fi
+
+echo "Deploying with NEXTAUTH_URL: $CURRENT_URL"
+
+# Run deployment and capture output to find the real URL
+DEPLOY_OUTPUT=$(gcloud run deploy $SERVICE_NAME \
     --image $IMAGE_TAG \
     --region $REGION \
     --platform managed \
@@ -107,14 +126,28 @@ gcloud run deploy $SERVICE_NAME \
     --memory=1Gi \
     --cpu=1 \
     --max-instances=10 \
-    --set-env-vars="NEXTAUTH_URL=https://vidyasetu-service-eg4ospxzfq-ue.a.run.app,INNGEST_DEV=false" \
-    --set-secrets="DATABASE_URL=DATABASE_URL:latest,AUTH_SECRET=AUTH_SECRET:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,AUTH_GOOGLE_ID=AUTH_GOOGLE_ID:latest,AUTH_GOOGLE_SECRET=AUTH_GOOGLE_SECRET:latest,INNGEST_EVENT_KEY=INNGEST_EVENT_KEY:latest,INNGEST_SIGNING_KEY=INNGEST_SIGNING_KEY:latest"
+    --set-env-vars="NEXTAUTH_URL=$CURRENT_URL,INNGEST_DEV=false" \
+    --set-secrets="DATABASE_URL=DATABASE_URL:latest,AUTH_SECRET=AUTH_SECRET:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,AUTH_GOOGLE_ID=AUTH_GOOGLE_ID:latest,AUTH_GOOGLE_SECRET=AUTH_GOOGLE_SECRET:latest,INNGEST_EVENT_KEY=INNGEST_EVENT_KEY:latest,INNGEST_SIGNING_KEY=INNGEST_SIGNING_KEY:latest" 2>&1)
+
+# Extract the actual URL from the output (it might have changed)
+ACTUAL_URL=$(echo "$DEPLOY_OUTPUT" | grep -o 'https://[^ ]*\.run\.app' | head -n 1)
+
+if [ -n "$ACTUAL_URL" ] && [ "$ACTUAL_URL" != "$CURRENT_URL" ]; then
+    echo -e "${BLUE}Warning: Service URL changed to ${ACTUAL_URL}. Redeploying with correct NEXTAUTH_URL...${NC}"
+    gcloud run deploy $SERVICE_NAME \
+        --image $IMAGE_TAG \
+        --region $REGION \
+        --platform managed \
+        --quiet \
+        --set-env-vars="NEXTAUTH_URL=$ACTUAL_URL,INNGEST_DEV=false"
+    CURRENT_URL=$ACTUAL_URL
+fi
 
 if [ $? -eq 0 ]; then
     echo -e "${GREEN}Deployment successful!${NC}"
-    SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region $REGION --format 'value(status.url)')
-    echo -e "${BLUE}Your app is live at: ${GREEN}${SERVICE_URL}${NC}"
+    echo -e "${BLUE}Your app is live at: ${GREEN}${CURRENT_URL}${NC}"
 else
     echo -e "\033[0;31mDeployment failed.${NC}"
+    echo "$DEPLOY_OUTPUT"
     exit 1
 fi

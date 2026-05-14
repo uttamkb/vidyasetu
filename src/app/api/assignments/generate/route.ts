@@ -6,6 +6,7 @@ import { AssignmentType, DifficultyLevel } from "@prisma/client";
 import { z } from "zod";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { inngest } from "@/inngest/client";
+import { logger } from "@/lib/logger";
 
 const generateSchema = z.object({
   subjectId: z.string().min(1, "Invalid subject ID"),
@@ -48,9 +49,13 @@ export async function POST(req: NextRequest) {
       try {
         const fetchRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
         const data = await fetchRes.json();
-        console.log("AVAILABLE MODELS:", data.models?.map((m: any) => m.name).join(", "));
+        logger.info("Checked AI model availability", {
+          category: "AI",
+          userId: session.user.id,
+          metadata: { models: data.models?.map((m: any) => m.name).join(", ") }
+        });
       } catch (e) {
-        console.error("Could not fetch models", e);
+        logger.warn("Could not fetch AI models", { category: "AI", userId: session.user.id, metadata: { error: e } });
       }
     }
 
@@ -79,6 +84,12 @@ export async function POST(req: NextRequest) {
           }
         }
       });
+      
+      logger.success("Assignment generation triggered (Inngest)", {
+        category: "AI",
+        userId: session.user.id,
+        metadata: { assignmentId: assignment.id, aiQCount }
+      });
     }
 
     return NextResponse.json({
@@ -89,7 +100,11 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Generation failed";
-    console.error("[POST /api/assignments/generate]", err);
+    logger.error("Assignment generation failed", {
+      category: "AI",
+      userId: session.user.id,
+      metadata: { error: message, stack: err instanceof Error ? err.stack : undefined, input: parsed.data }
+    });
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

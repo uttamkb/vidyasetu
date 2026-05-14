@@ -656,3 +656,36 @@ model UserAIUsage {
   @@index([userId, date])
   @@map("user_ai_usage")
 }
+// ============================================================
+// System Observability (Admin Logs)
+// ============================================================
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+  SUCCESS
+}
+
+enum LogCategory {
+  AUTH
+  AI
+  DB
+  SYSTEM
+  INNGEST
+}
+
+model SystemLog {
+  id        String      @id @default(uuid())
+  level     LogLevel
+  category  LogCategory
+  message   String      @db.Text
+  metadata  Json?       // For error stacks, request IDs, or payload snippets
+  userId    String?     // Associated user if applicable
+  createdAt DateTime    @default(now())
+
+  @@index([level, createdAt])
+  @@index([category, createdAt])
+  @@index([userId, createdAt])
+  @@map("system_logs")
+}

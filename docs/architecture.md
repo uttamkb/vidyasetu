@@ -51,6 +51,7 @@ VidyaSetu is a Next.js 16 (App Router) application that serves as an adaptive le
 | `UsageTracker` | Monitor AI calls, tokens, and costs per user/model | `src/services/usage-tracker.ts` |
 | `RecommendationEngine` | Identify weak topics, suggest next steps | `src/services/recommendation-engine.ts` |
 | `Prisma Singleton` | Thread-safe DB client with Neon adapter | `src/lib/db.ts` |
+| `Logger` | Centralized dual-logging (Console + Database) for observability | `src/lib/logger.ts` |
 | `Inngest Client` | Event bus for async tasks (evaluation, generation) | `src/inngest/client.ts` |
 | `Constants` | Shared Indian states, subjects, and curriculum metadata | `src/lib/constants.ts` |
 
@@ -119,6 +120,23 @@ from bundling them (which causes `process.env.DATABASE_URL` to be undefined at r
 1. Weekly cron (or on-demand) → aggregates `Submission.totalScore` per user
 2. `LeaderboardEntry` upserted per user/period combination
 3. Ranking computed via SQL window function (`ROW_NUMBER() OVER (ORDER BY score DESC)`)
+
+## System Observability
+
+VidyaSetu uses a custom "Dual-Logging" framework to balance infrastructure monitoring with admin visibility.
+
+### Logging Strategy (`src/lib/logger.ts`)
+
+1. **Infrastructure Logs (Console)**: Standard `console.log/error` outputs. These are captured by GCP Cloud Logging (Stackdriver) for deep system debugging.
+2. **Admin Logs (Database)**: High-value events (AI failures, Inngest triggers, Auth events) are stored in the `SystemLog` table.
+
+**Key Features**:
+- **Non-Blocking**: Database logging is performed asynchronously to ensure zero impact on request latency.
+- **Structured Metadata**: JSON field for capturing full error stacks or AI prompt/response snippets.
+- **Classification**: Logs are categorized by `LogLevel` (INFO, WARN, ERROR, SUCCESS) and `LogCategory` (AI, DB, AUTH, etc.).
+
+### Usage Tracking (`src/services/usage-tracker.ts`)
+AI costs are tracked per-user per-day in the `UserAIUsage` table, allowing admins to monitor burn rates and identify high-cost student accounts.
 
 ## Technology Decisions
 
