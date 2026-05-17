@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
+import { connection } from "next/server";
 
 /**
  * Server-side onboarding guard component.
@@ -26,10 +27,13 @@ export async function OnboardingGuard({
 
   const isOnboarded = dbUser?.isOnboarded ?? false;
 
-  // Detect current pathname from the x-pathname header set by proxy.ts middleware
+  // Detect current pathname from the x-pathname header set by middleware
+  await connection();
   const headersList = await headers();
   const pathname = headersList.get("x-pathname") ?? "";
   const isOnOnboardingPage = pathname.startsWith("/onboarding");
+
+  console.log(`[OnboardingGuard] user:${userId} path:${pathname} onboarded:${isOnboarded}`);
 
   if (!isOnboarded && !isOnOnboardingPage) {
     redirect("/onboarding");

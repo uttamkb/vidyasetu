@@ -25,6 +25,9 @@ vi.mock("@/lib/db", () => {
     leaderboardEntry: {
       upsert: vi.fn(),
     },
+    aIValidation: {
+      findMany: vi.fn(() => []),
+    },
     $transaction: vi.fn((callback) => callback(mockPrisma)),
   };
   return { prisma: mockPrisma };
@@ -157,6 +160,7 @@ describe("evaluation-engine", () => {
     expect(callGemini).toHaveBeenCalledWith(
       expect.anything(),
       expect.arrayContaining([expect.anything(), expect.objectContaining({ inlineData: expect.anything() })]),
+      expect.anything(),
       expect.anything()
     );
   });

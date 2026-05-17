@@ -14,6 +14,7 @@ VidyaSetu is a **Cognitive Coach & Adaptive Mastery System** for CBSE Class 9 st
 | **AI Engine** | Google Gemini (Cascade: 3.1 Pro ↔ 2.5 Flash) |
 | **Styling** | Vanilla CSS + shadcn/ui (Radix UI) |
 | **Auth** | Auth.js v5 (NextAuth) — Three-file Edge pattern |
+| **Edge Gateway** | `src/proxy.ts` (Next.js 16 requirement — **NEVER** use `middleware.ts`) |
 | **Database** | Neon PostgreSQL (Serverless) |
 | **ORM** | Prisma v7 (Wasm-based with Neon adapter) |
 | **Monitoring** | AI Usage Tracker (Token & Call metrics) |
@@ -50,9 +51,19 @@ VidyaSetu is a **Cognitive Coach & Adaptive Mastery System** for CBSE Class 9 st
 - **Paper-to-Digital** — Transcription of physical OMR-based practice sheets into digital records.
 - **Unified Progress** — Merges offline practice data with online mastery tracking.
 
-### 6. Admin Console
+### 7. Admin Console
 - **Operational Visibility** — Real-time monitoring of AI usage, job queues, and student activity.
-- **Content Seeding** — Tools for AI-assisted curriculum generation and verification.
+- **Content Seeding** — Inngest-powered curriculum bootstrapping (Grades 8 & 10) and verification tools.
+- **Role-Based Access** — Granular operational controls and usage-monitoring scripts.
+
+### 8. Curriculum Video Integration
+- **Verified Video Seeding** — Robust verification (oEmbed, Proxy, Thumbnail Pings) to ensure video link integrity.
+- **In-App Media Player** — Integrated YouTube player modal to retain focus within the platform.
+- **Search Hubs** — Automated fallback search hubs when specific videos cannot be verified.
+
+### 9. Self-healing Authentication
+- **Ghost Session Remediation** — Automated detection of `MissingCSRF` or `OAuthAccountNotLinked` errors that triggers a server-side cookie purge to resolve login loops.
+- **Diagnostic API** — Developer-only `/api/dev/logs` route to expose `SystemLog` table for rapid troubleshooting of auth failures.
 
 ---
 
@@ -76,8 +87,8 @@ VidyaSetu is a **Cognitive Coach & Adaptive Mastery System** for CBSE Class 9 st
 | `/assignments` | List of generated practice sets and mock exams |
 | `/progress` | Detailed Mastery Map and strength/weakness analysis |
 | `/leaderboard` | Growth-based rankings (Global, District, School) |
-| `/admin` | Operational dashboard for system administrators |
-| `/playbook` | Internal developer documentation and UI patterns |
+| `/admin` | Operational dashboard, curriculum seeder, and usage metrics |
+| `/playbook` | Functional User Manual and end-to-end student workflow documentation |
 
 ---
 
@@ -90,9 +101,20 @@ The following skills are available to the Agent for development and maintenance:
 | **academic-notes-curator** | Transforms text into premium study material adhering to NCERT boundaries. | `.agent/skills/academic-notes-curator` |
 | **architect-nextjs-ai** | Senior Architect for Next.js, Neon, and Gemini integration. | `.agent/skills/architect-nextjs-ai` |
 | **claude** | Behavioral guidelines for simplistic and surgical coding. | `.agent/skills/claude` |
+| **devops** | Infrastructure enhancement and GitHub/CI/CD readiness. | `.agent/skills/devops` |
 | **devops-engineer** | Expert skill for containerization, GCP deployment, and CI/CD. | `.agent/skills/devops-engineer` |
 | **ux-designer** | Expert UI/UX design following HIG and premium aesthetics. | `.agent/skills/ux-designer` |
 
 ---
 
-*Built with ❤️ to make CBSE Class 9 students exam-ready through science-backed learning.*
+## Workflows
+
+The following workflows are available to automate complex project tasks:
+
+| Workflow | Description | Location |
+|----------|-------------|----------|
+| **graphify** | Turns project files into a navigable knowledge graph (`graphify-out`). | `.agents/workflows/graphify.md` |
+
+---
+
+*Built with ❤️ to make CBSE students exam-ready through science-backed learning.*

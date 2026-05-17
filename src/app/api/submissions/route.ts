@@ -7,6 +7,7 @@ import { toJson } from "@/lib/prisma-json";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { inngest } from "@/inngest/client";
 import { logger } from "@/lib/logger";
+import { requireSubscription, incrementUsage } from "@/lib/require-subscription";
 
 const submitSchema = z.object({
   assignmentId: z.string().uuid(),
@@ -27,12 +28,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Rate limit: 30 AI evaluation requests per minute per user
-  const rateLimit = checkRateLimit(session.user.id, 30);
+  // Rate limit: 60 AI evaluation requests per minute per user
+  const rateLimit = await checkRateLimit(session.user.id, 60);
   if (!rateLimit.allowed) {
     return NextResponse.json(
       { error: "Too many requests. Please wait before submitting again.", retryAfterMs: rateLimit.resetInMs },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rateLimit.resetInMs / 1000)) } }
+    );
+  }
+
+  // Subscription check: enforce plan limits (shadow mode by default)
+  const access = await requireSubscription(session.user.id, "EVALUATION");
+  if (!access.allowed) {
+    return NextResponse.json(
+      { error: access.reason, code: access.code },
+      { status: 403 }
     );
   }
 

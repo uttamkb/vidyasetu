@@ -5,9 +5,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Clock, BookOpen, ArrowLeft } from "lucide-react";
+import { Clock, BookOpen, ArrowLeft, Sparkles, RotateCcw } from "lucide-react";
 import Link from "next/link";
 import AssignmentForm from "./assignment-form";
+import { GenerationPoller } from "./generation-poller";
+import { ArchiveButton } from "../archive-button";
 
 async function getAssignment(id: string, userId: string) {
   const assignment = await prisma.assignment.findUnique({
@@ -57,6 +59,12 @@ export default async function AssignmentDetailPage({
     where: { id: { in: questionIds } },
   });
 
+  // 5-minute stale check
+  const isStale = assignment.status === "GENERATING" && 
+                 (new Date().getTime() - new Date(assignment.createdAt).getTime()) > 5 * 60 * 1000;
+  
+  const displayStatus = isStale || assignment.status === "FAILED" ? "FAILED" : assignment.status;
+
   // Map pointers to their full question data
   const fullQuestions = questions.map((pointer) => {
     const q = fetchedQuestions.find((fq) => fq.id === pointer.questionId);
@@ -80,6 +88,7 @@ export default async function AssignmentDetailPage({
         </div>
       </div>
 
+
       <Card>
         <CardContent className="py-4">
           <div className="flex flex-wrap items-center gap-4 text-sm">
@@ -98,11 +107,66 @@ export default async function AssignmentDetailPage({
             {assignment.timeLimit && (
               <Badge variant="secondary">Time Limit: {assignment.timeLimit} min</Badge>
             )}
+            {displayStatus === "GENERATING" && (
+              <Badge variant="default" className="bg-blue-500 animate-pulse">Generating AI Questions...</Badge>
+            )}
+            {displayStatus === "FAILED" && (
+              <Badge variant="destructive">Generation Failed</Badge>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {assignment.submission && !isRetest ? (
+      {displayStatus === "FAILED" && (
+        <Card className="border-rose-200 bg-rose-50/50">
+          <CardHeader>
+            <CardTitle className="text-rose-700 flex items-center gap-2">
+              <RotateCcw className="h-5 w-5" />
+              Generation Failed
+            </CardTitle>
+            <CardDescription>
+              We encountered an issue while generating questions for this assignment. 
+              This can happen due to AI rate limits or network issues.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <p className="text-sm text-foreground/70">
+              Please delete this assignment and try generating it again. We recommend waiting a few moments before retrying.
+            </p>
+            <div className="flex gap-3">
+              <Link href="/assignments">
+                <Button variant="outline">Back to Assignments</Button>
+              </Link>
+              <ArchiveButton assignmentId={assignment.id} label="Delete & Try Again" />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {displayStatus === "GENERATING" ? (
+        <>
+          <GenerationPoller assignmentId={assignment.id} />
+          <Card className="border-blue-200 bg-blue-50/50">
+            <CardHeader>
+              <CardTitle className="text-blue-700 flex items-center gap-2">
+                <Sparkles className="h-5 w-5 animate-spin" />
+                Preparing your assignment...
+              </CardTitle>
+              <CardDescription>
+                We are generating high-quality questions for you. This usually takes 15-30 seconds.
+                The page will update once the questions are ready.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div className="h-4 bg-blue-100 rounded animate-pulse w-3/4" />
+                <div className="h-4 bg-blue-100 rounded animate-pulse w-1/2" />
+                <div className="h-4 bg-blue-100 rounded animate-pulse w-2/3" />
+              </div>
+            </CardContent>
+          </Card>
+        </>
+      ) : assignment.submission && !isRetest ? (
         <Card className="bg-green-50 dark:bg-green-950">
           <CardHeader>
             <CardTitle>Already Submitted</CardTitle>

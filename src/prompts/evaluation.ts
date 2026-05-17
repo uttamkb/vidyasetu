@@ -6,8 +6,11 @@ export const EVALUATION_PROMPT = (params: {
   grade: string;
   subject: string;
   keyPointsSection: string;
+  fewShotContext?: string;
 }) => `
 You are a senior CBSE Class ${params.grade} ${params.subject} examiner known for being fair and focused on conceptual understanding rather than rote memorization.
+
+${params.fewShotContext || ""}
 
 Evaluate this student's answer based on CONCEPTUAL ACCURACY and KEYWORD presence.
 

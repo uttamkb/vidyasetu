@@ -11,7 +11,6 @@
  */
 import type { NextAuthConfig } from "next-auth";
 import Google from "next-auth/providers/google";
-import Credentials from "next-auth/providers/credentials";
 
 export const authConfig = {
   providers: [
@@ -19,16 +18,14 @@ export const authConfig = {
     Google({
       clientId: process.env.AUTH_GOOGLE_ID,
       clientSecret: process.env.AUTH_GOOGLE_SECRET,
-    }),
-    // Credentials provider — authorize() logic lives in auth.ts (Node-only)
-    // This stub is needed so NextAuth knows this provider exists at the Edge.
-    Credentials({
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
+      allowDangerousEmailAccountLinking: true,
+      authorization: {
+        params: {
+          prompt: "select_account",
+          access_type: "offline",
+          response_type: "code",
+        },
       },
-      // Intentionally returns null — real logic is in auth.ts
-      authorize: () => null,
     }),
   ],
 
@@ -48,7 +45,8 @@ export const authConfig = {
       if (user) {
         token.id = user.id;
         token.isOnboarded = (user as any).isOnboarded ?? false;
-        token.role = (user as any).role ?? "STUDENT";
+        token.role = ((user as any).role as "STUDENT" | "ADMIN" | "SUPER_ADMIN") ?? "STUDENT";
+        token.isActive = (user as any).isActive ?? true;
       }
       // Handle session.update() calls (e.g. after onboarding completes)
       if (trigger === "update" && session?.isOnboarded !== undefined) {
@@ -56,6 +54,9 @@ export const authConfig = {
       }
       if (trigger === "update" && session?.role !== undefined) {
         token.role = session.role;
+      }
+      if (trigger === "update" && session?.isActive !== undefined) {
+        token.isActive = session.isActive;
       }
       return token;
     },
@@ -68,7 +69,8 @@ export const authConfig = {
       if (token.id && session.user) {
         session.user.id = token.id as string;
         session.user.isOnboarded = (token.isOnboarded as boolean) ?? false;
-        session.user.role = (token.role as string) ?? "STUDENT";
+        session.user.role = (token.role as "STUDENT" | "ADMIN" | "SUPER_ADMIN") ?? "STUDENT";
+        session.user.isActive = (token.isActive as boolean) ?? true;
       }
       return session;
     },
@@ -79,14 +81,44 @@ export const authConfig = {
      */
     authorized({ auth: authSession, request: { nextUrl } }) {
       const isLoggedIn = !!authSession?.user;
-      const isProtected =
-        nextUrl.pathname.startsWith("/dashboard") ||
-        nextUrl.pathname.startsWith("/assignments") ||
-        nextUrl.pathname.startsWith("/progress") ||
-        nextUrl.pathname.startsWith("/study-materials") ||
-        nextUrl.pathname.startsWith("/profile");
+      const role = (authSession?.user as any)?.role;
+      const pathname = nextUrl.pathname;
 
-      if (isProtected && !isLoggedIn) return false; // → redirects to /login
+      // 1. Unauthenticated users cannot access protected routes
+      const PROTECTED_ROUTES = [
+        "/dashboard",
+        "/assignments",
+        "/progress",
+        "/study-materials",
+        "/profile",
+        "/onboarding",
+        "/admin",
+      ];
+      
+      const isProtectedRoute = PROTECTED_ROUTES.some(route => pathname.startsWith(route));
+
+      if (isProtectedRoute && !isLoggedIn) return false;
+
+      // 2. Redirect authenticated users from public pages to their dashboard
+      if (isLoggedIn && (pathname === "/" || pathname === "/login")) {
+        console.log(`[auth.config] Redirecting logged-in ${role} from ${pathname}`);
+        if (role === "ADMIN" || role === "SUPER_ADMIN") {
+          return Response.redirect(new URL("/admin", nextUrl));
+        }
+        return Response.redirect(new URL("/dashboard", nextUrl));
+      }
+
+      // 3. Prevent role-mismatch (Student in Admin, Admin in Student)
+      // This ensures smooth transitions when logging out and in with different roles
+      if (isLoggedIn) {
+        if (pathname.startsWith("/admin") && role === "STUDENT") {
+          return Response.redirect(new URL("/dashboard", nextUrl));
+        }
+        if (pathname.startsWith("/dashboard") && (role === "ADMIN" || role === "SUPER_ADMIN")) {
+          return Response.redirect(new URL("/admin", nextUrl));
+        }
+      }
+
       return true;
     },
   },

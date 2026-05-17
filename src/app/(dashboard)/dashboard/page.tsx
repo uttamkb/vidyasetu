@@ -32,11 +32,11 @@ async function getDashboardData(userId: string) {
   startOfWeek.setDate(now.getDate() - now.getDay());
   startOfWeek.setHours(0, 0, 0, 0);
 
-  const [user, totalAssignments, submissionsThisWeek, userSubmissions, subjects, streak, masteryStats] =
+  const [user, totalAssignments, submissionsThisWeek, userSubmissions, streak, masteryStats] =
     await Promise.all([
       prisma.user.findUnique({
         where: { id: userId },
-        select: { hardestSubjects: true, targetScore: true, board: true, name: true, xp: true, level: true },
+        select: { hardestSubjects: true, targetScore: true, board: true, grade: true, name: true, xp: true, level: true },
       }),
       prisma.assignment.count(),
       prisma.submission.count({
@@ -48,7 +48,6 @@ async function getDashboardData(userId: string) {
         orderBy: { submittedAt: "desc" },
         take: 5,
       }),
-      prisma.subject.findMany(),
       prisma.studyStreak.findUnique({
         where: { userId },
         select: { currentStreak: true, longestStreak: true, lastStudyDate: true },
@@ -59,6 +58,14 @@ async function getDashboardData(userId: string) {
         _avg: { masteryScore: true },
       }),
     ]);
+
+  // Fetch subjects filtered by user's grade/board to avoid showing subjects from other classes
+  const classSubjects = await prisma.subject.findMany({
+    where: {
+      grade: user?.grade || "9",
+      board: user?.board || "CBSE",
+    }
+  });
 
   const pendingCount = await prisma.submission.count({ where: { userId, status: "SUBMITTED" } });
   const pendingAssignments = Math.max(0, totalAssignments - pendingCount);
@@ -87,7 +94,7 @@ async function getDashboardData(userId: string) {
     masteredTopicsTotal: masteryStats._count.id,
     avgMastery: Math.round(masteryStats._avg.masteryScore ?? 0),
     masteredThisWeek,
-    subjects: subjects
+    subjects: classSubjects
       .sort((a, b) => {
         const aHard = user?.hardestSubjects.includes(a.name) ? 1 : 0;
         const bHard = user?.hardestSubjects.includes(b.name) ? 1 : 0;

@@ -1,9 +1,8 @@
 "use client";
 
-import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
@@ -17,13 +16,14 @@ import {
 import { CheckCircle2, ChevronRight, GraduationCap, AlertCircle, MapPin } from "lucide-react";
 
 import { INDIAN_STATES, SUBJECTS } from "@/lib/constants";
+import { LocationAutocomplete } from "@/components/onboarding/location-autocomplete";
 
 const TOTAL_STEPS = 4;
 
 const STEP_LABELS = ["Location", "Challenges", "Goals", "Schedule"];
 
 export default function OnboardingPage() {
-  const router = useRouter();
+  const { update: updateSession } = useSession();
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,10 +52,28 @@ export default function OnboardingPage() {
     );
   };
 
-  const canProceed = () => {
-    if (step === 1) return state.trim().length > 0;
-    if (step === 2) return hardestSubjects.length > 0;
-    return true;
+  const canProceed = () => true;
+
+  const handleSkip = async () => {
+    setSaving(true);
+    try {
+      const res = await fetch("/api/onboarding", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ grade: "9", board: "CBSE" }),
+      });
+      if (res.ok) {
+        // Update the JWT token so middleware sees isOnboarded=true
+        await updateSession({ isOnboarded: true });
+        window.location.href = "/dashboard";
+      } else {
+        setError("Could not save preferences. Please try again.");
+      }
+    } catch {
+      setError("Network error. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleComplete = async () => {
@@ -78,8 +96,8 @@ export default function OnboardingPage() {
       });
 
       if (res.ok) {
-        // Full page reload triggers the server component OnboardingGuard,
-        // which reads isOnboarded from the DATABASE and lets us through.
+        // Update the JWT token so middleware sees isOnboarded=true immediately
+        await updateSession({ isOnboarded: true });
         window.location.href = "/dashboard";
       } else {
         const data = await res.json();
@@ -223,22 +241,25 @@ export default function OnboardingPage() {
 
               <div className="space-y-2">
                 <Label htmlFor="district">District <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                <Input
+                <LocationAutocomplete
                   id="district"
+                  type="district"
+                  state={state}
                   placeholder="e.g. Bhubaneswar, Patna, Pune…"
                   value={district}
-                  onChange={(e) => setDistrict(e.target.value)}
+                  onChange={setDistrict}
                   maxLength={100}
                 />
               </div>
 
               <div className="space-y-2">
                 <Label htmlFor="school">School Name <span className="text-muted-foreground text-xs">(optional)</span></Label>
-                <Input
+                <LocationAutocomplete
                   id="school"
+                  type="school"
                   placeholder="e.g. Delhi Public School, Kendriya Vidyalaya…"
                   value={school}
-                  onChange={(e) => setSchool(e.target.value)}
+                  onChange={setSchool}
                   maxLength={200}
                 />
                 <p className="text-xs text-muted-foreground">
@@ -307,27 +328,36 @@ export default function OnboardingPage() {
           )}
         </CardContent>
 
-        <CardFooter className="flex justify-between border-t pt-6">
-          <Button
-            variant="ghost"
-            onClick={() => setStep(prev => prev - 1)}
-            disabled={step === 1 || saving}
-          >
-            Back
-          </Button>
-
-          {step < TOTAL_STEPS ? (
+        <CardFooter className="flex flex-col gap-3 border-t pt-6">
+          <div className="flex justify-between w-full">
             <Button
-              onClick={() => setStep(prev => prev + 1)}
-              disabled={!canProceed()}
+              variant="ghost"
+              onClick={() => setStep(prev => prev - 1)}
+              disabled={step === 1 || saving}
             >
-              Next Step <ChevronRight className="ml-2 h-4 w-4" />
+              Back
             </Button>
-          ) : (
-            <Button onClick={handleComplete} disabled={saving}>
-              {saving ? "Creating your profile…" : "Finish Onboarding"}
-            </Button>
-          )}
+
+            {step < TOTAL_STEPS ? (
+              <Button
+                onClick={() => setStep(prev => prev + 1)}
+                disabled={!canProceed()}
+              >
+                Next Step <ChevronRight className="ml-2 h-4 w-4" />
+              </Button>
+            ) : (
+              <Button onClick={handleComplete} disabled={saving}>
+                {saving ? "Creating your profile…" : "Finish Onboarding"}
+              </Button>
+            )}
+          </div>
+          <button
+            onClick={handleSkip}
+            disabled={saving}
+            className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline transition-colors"
+          >
+            Skip for now — I&apos;ll set this up later
+          </button>
         </CardFooter>
       </Card>
     </div>

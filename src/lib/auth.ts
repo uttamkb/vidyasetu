@@ -11,7 +11,6 @@
  */
 import NextAuth from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import Credentials from "next-auth/providers/credentials";
 import { authConfig } from "./auth.config";
 import { prisma } from "./db";
 
@@ -22,44 +21,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   // Not needed for JWT-only sessions but required for OAuth account linking.
   adapter: PrismaAdapter(prisma),
 
-  // Override the stub Credentials provider with the real authorize logic.
-  providers: [
-    // Keep all non-credentials providers (Google, etc.) from authConfig
-    ...authConfig.providers.filter((p) => p.id !== "credentials"),
-
-    Credentials({
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
-      },
-      async authorize(credentials) {
-        const email = String(credentials?.email ?? "").toLowerCase().trim();
-        const password = String(credentials?.password ?? "");
-
-        // Demo account — hardcoded for MVP testing
-        if (email !== "student@example.com" || password !== "password") {
-          return null; // Returning null triggers "Invalid credentials" on client
-        }
-
-        // Ensure the demo user exists in the DB (upsert is idempotent)
-        const user = await prisma.user.upsert({
-          where: { email },
-          update: { name: "Demo Student" },
-          create: { email, name: "Demo Student", grade: "9", role: "STUDENT" },
-        });
-
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          image: user.image,
-          isOnboarded: user.isOnboarded,
-          role: user.role,
-        };
-      },
-    }),
-  ],
-
   callbacks: {
     /**
      * JWT callback — runs server-side only (Node.js).
@@ -68,45 +29,40 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
      * On subsequent requests: token already has the data, no DB call needed.
      */
     async jwt({ token, user, trigger, session }) {
-      // `user` is only populated on the initial sign-in event
+      /**
+       * `user` is only populated on the initial sign-in event.
+       * With PrismaAdapter, the adapter has ALREADY created/linked the User+Account
+       * in the database by the time this callback fires. The `user` object here
+       * is the fully-resolved DB record from the adapter. We just copy fields to token.
+       */
       if (user) {
-        // For Credentials: authorize() already returned the DB user with isOnboarded.
-        // For OAuth (Google): sync with DB to get/create the user record.
-        if (user.id?.startsWith("demo-") || !user.email) {
-          // Fallback path — should not normally be reached
-          token.id = user.id;
-          token.name = user.name;
-          token.image = user.image;
-          token.isOnboarded = false;
-          token.role = "STUDENT";
+        const ownerEmail = process.env.OWNER_EMAIL?.toLowerCase().trim();
+        const isOwner = ownerEmail && user.email?.toLowerCase() === ownerEmail;
+
+        token.id = user.id;
+        token.name = user.name;
+        token.image = user.image;
+        token.isOnboarded = (user as any).isOnboarded ?? false;
+        token.isActive = (user as any).isActive ?? true;
+
+        // Determine role: owner always gets SUPER_ADMIN, otherwise use the DB role
+        if (isOwner && (user as any).role !== "SUPER_ADMIN") {
+          // Promote owner asynchronously — fire-and-forget, non-blocking
+          prisma.user.update({
+            where: { id: user.id! },
+            data: { role: "SUPER_ADMIN" },
+          }).then(() => {
+            console.log(`[auth] Promoted ${user.email} to SUPER_ADMIN`);
+          }).catch((e: unknown) => {
+            console.error("[auth] Failed to promote owner:", e);
+          });
+          token.role = "SUPER_ADMIN";
         } else {
-          try {
-            const dbUser = await prisma.user.upsert({
-              where: { email: user.email },
-              update: { name: user.name, image: user.image },
-              create: { email: user.email, name: user.name, image: user.image, grade: "9", role: "STUDENT" },
-              select: { id: true, isOnboarded: true, role: true, name: true, image: true, state: true, district: true, school: true },
-            });
-            token.id = dbUser.id;
-            token.name = dbUser.name;
-            token.image = dbUser.image;
-            token.isOnboarded = dbUser.isOnboarded;
-            token.role = dbUser.role;
-            token.state = dbUser.state;
-            token.district = dbUser.district;
-            token.school = dbUser.school;
-          } catch (err) {
-            console.error("[auth] jwt callback DB sync failed:", err);
-            token.id = user.id;
-            token.name = user.name;
-            token.image = user.image;
-            token.isOnboarded = false;
-            token.role = "STUDENT";
-          }
+          token.role = ((user as any).role as "STUDENT" | "ADMIN" | "SUPER_ADMIN") ?? "STUDENT";
         }
       }
 
-      // Handle session.update() calls
+      // Handle session.update() calls (e.g., after onboarding completes)
       if (trigger === "update" && session) {
         if (session.name !== undefined) token.name = session.name;
         if (session.image !== undefined) token.image = session.image;
@@ -114,6 +70,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (session.state !== undefined) token.state = session.state;
         if (session.district !== undefined) token.district = session.district;
         if (session.school !== undefined) token.school = session.school;
+        if (session.role !== undefined) token.role = session.role;
+        if (session.isActive !== undefined) token.isActive = session.isActive;
       }
 
       return token;
@@ -129,7 +87,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.name = token.name as string;
         session.user.image = token.image as string;
         session.user.isOnboarded = (token.isOnboarded as boolean) ?? false;
-        session.user.role = (token.role as string) ?? "STUDENT";
+        session.user.role = (token.role as "STUDENT" | "ADMIN" | "SUPER_ADMIN") ?? "STUDENT";
+        session.user.isActive = (token.isActive as boolean) ?? true;
         session.user.state = token.state as string | null;
         session.user.district = token.district as string | null;
         session.user.school = token.school as string | null;

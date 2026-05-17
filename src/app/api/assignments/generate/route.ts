@@ -7,6 +7,7 @@ import { z } from "zod";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { inngest } from "@/inngest/client";
 import { logger } from "@/lib/logger";
+import { requireSubscription, incrementUsage } from "@/lib/require-subscription";
 
 const generateSchema = z.object({
   subjectId: z.string().min(1, "Invalid subject ID"),
@@ -25,12 +26,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Rate limit: 30 AI generation requests per minute per user
-  const rateLimit = checkRateLimit(session.user.id, 30);
+  // Rate limit: 60 AI generation requests per minute per user
+  const rateLimit = await checkRateLimit(session.user.id, 60);
   if (!rateLimit.allowed) {
     return NextResponse.json(
       { error: "Too many requests. Please wait before generating another assignment.", retryAfterMs: rateLimit.resetInMs },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rateLimit.resetInMs / 1000)) } }
+    );
+  }
+
+  // Subscription check: enforce plan limits (shadow mode by default)
+  const access = await requireSubscription(session.user.id, "ASSIGNMENT_GENERATION");
+  if (!access.allowed) {
+    return NextResponse.json(
+      { error: access.reason, code: access.code },
+      { status: 403 }
     );
   }
 
@@ -44,53 +54,53 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey) {
-      try {
-        const fetchRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
-        const data = await fetchRes.json();
-        logger.info("Checked AI model availability", {
-          category: "AI",
-          userId: session.user.id,
-          metadata: { models: data.models?.map((m: any) => m.name).join(", ") }
-        });
-      } catch (e) {
-        logger.warn("Could not fetch AI models", { category: "AI", userId: session.user.id, metadata: { error: e } });
-      }
-    }
-
+    // The discovery and validation are now handled by the gemini.ts lib
     const { assignment, aiQCount, topicNames, chapterName, location, mainSubtopicId } = await generateAssignment({
       userId: session.user.id,
       ...parsed.data,
     });
 
     if (aiQCount > 0) {
-      await inngest.send({
-        name: "app/assignment.generate",
-        data: {
-          assignmentId: assignment.id,
-          userId: session.user.id,
-          aiQCount,
-          input: {
-            subjectName: assignment.subject.name,
-            grade: assignment.subject.grade,
-            chapterName: chapterName || "Full Syllabus",
-            subtopics: topicNames,
-            difficulty: assignment.difficulty,
-            state: location.state,
-            district: location.district,
-            schoolName: location.school,
-            subtopicId: mainSubtopicId,
+      try {
+        await inngest.send({
+          name: "app/assignment.generate",
+          data: {
+            assignmentId: assignment.id,
+            userId: session.user.id,
+            aiQCount,
+            input: {
+              subjectName: assignment.subject.name,
+              grade: assignment.subject.grade,
+              chapterName: chapterName || "Full Syllabus",
+              subtopics: topicNames,
+              difficulty: assignment.difficulty,
+              state: location.state,
+              district: location.district,
+              schoolName: location.school,
+              subtopicId: mainSubtopicId,
+            }
           }
-        }
-      });
-      
-      logger.success("Assignment generation triggered (Inngest)", {
-        category: "AI",
-        userId: session.user.id,
-        metadata: { assignmentId: assignment.id, aiQCount }
-      });
+        });
+      } catch (inngestErr) {
+        // STRATEGIC DECISION: If Inngest is down, we MUST fail the request.
+        // Bypassing the queue violates the architecture's concurrency & cost controls.
+        const errorMsg = (inngestErr as Error).message;
+        logger.error("Infrastructure Failure: Inngest server unreachable", {
+          category: "INNGEST",
+          userId: session.user.id,
+          metadata: { error: errorMsg }
+        });
+        
+        return NextResponse.json({ 
+          error: "Background Worker (Inngest) is offline.",
+          suggestion: "Please run 'npx inngest-cli@latest dev' in your terminal to start the background worker.",
+          code: "INNGEST_OFFLINE"
+        }, { status: 503 });
+      }
     }
+
+    // Track usage for subscription limits
+    await incrementUsage(session.user.id, "ASSIGNMENT_GENERATION");
 
     return NextResponse.json({
       success: true,

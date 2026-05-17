@@ -44,6 +44,24 @@ model Session {
 // User
 // ============================================================
 
+enum UserRole {
+  STUDENT
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum SubscriptionPlan {
+  FREE
+  PRO
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  TRIAL
+  CANCELLED
+}
+
 model User {
   id                  String    @id @default(uuid())
   email               String    @unique
@@ -60,15 +78,31 @@ model User {
   district            String?
   school              String?
 
-  // Role
-  role                String    @default("STUDENT") // "STUDENT" | "ADMIN"
+  // Role & Access Control
+  role                UserRole  @default(STUDENT)
+  isActive            Boolean   @default(true)
+  disabledAt          DateTime?
+  disabledBy          String?
+  disableReason       String?
+
+  // Subscription
+  subscriptionPlan       SubscriptionPlan?  @default(FREE)
+  subscriptionStatus     SubscriptionStatus? @default(ACTIVE)
+  subscriptionExpiresAt  DateTime?
+  featureAccess          Json? // { "ASSIGNMENT_GENERATION": true, "EVALUATION": false, ... }
+
+  // Activity Counters (denormalized for fast admin reads)
+  totalAssignmentsGenerated Int @default(0)
+  totalSubmissions          Int @default(0)
+  totalAICalls              Int @default(0)
+  lastActiveAt              DateTime?
 
   // Leaderboard
   leaderboardOptIn    Boolean   @default(false)
 
   // Onboarding
   isOnboarded         Boolean   @default(false)
-  hardestSubjects     String[]
+  hardestSubjects     String[]  @default([])
   targetScore         Int?
   studyTimePreference String?
 
@@ -96,6 +130,10 @@ model User {
   leaderboardEntries  LeaderboardEntry[]
   aiUsage             UserAIUsage[]
 
+  // School relation
+  schoolId            String?
+  schoolRef           School?   @relation(fields: [schoolId], references: [id])
+
   @@map("users")
 }
 
@@ -112,9 +150,10 @@ model Subject {
   icon       String?
   orderIndex Int       @default(0)
 
-  chapters       Chapter[]
-  assignments    Assignment[]
-  studyMaterials StudyMaterial[]
+  chapters        Chapter[]
+  assignments     Assignment[]
+  studyMaterials  StudyMaterial[]
+  sourceDocuments SourceDocument[]
 
   @@unique([name, grade, board])
   @@map("subjects")
@@ -217,8 +256,20 @@ model Question {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Institutional context
+  schoolId            String?
+  school              School?         @relation(fields: [schoolId], references: [id])
+  sourceDocumentId    String?
+  sourceDocument      SourceDocument? @relation(fields: [sourceDocumentId], references: [id])
+
+  // Archival policy
+  isArchived          Boolean         @default(false)
+  archivedAt          DateTime?
+
   @@index([subtopicId, difficulty])
   @@index([subtopicId, bloomLevel])
+  @@index([schoolId])
+  @@index([isArchived])
   @@map("questions")
 }
 
@@ -245,6 +296,8 @@ enum AssignmentStatus {
   GENERATING
   READY
   FAILED
+  IN_PROGRESS
+  COMPLETED
 }
 
 model Assignment {
@@ -280,9 +333,15 @@ model Assignment {
   createdAt   DateTime       @default(now())
   submissions Submission[]
 
+  // School-specific generation
+  schoolId            String?
+  school              School?         @relation(fields: [schoolId], references: [id])
+  examType            String?         // e.g. "UNIT_TEST", "HALF_YEARLY"
+
   @@index([subjectId])
   @@index([chapterId])
   @@index([targetGrade, targetBoard])
+  @@index([schoolId])
   @@map("assignments")
 }
 
@@ -464,6 +523,9 @@ model StudyMaterial {
   aiGeneratedAt DateTime?
 
   isPublished   Boolean     @default(true)
+  
+  schoolId      String?     
+  school        School?     @relation(fields: [schoolId], references: [id])
 
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -647,14 +709,57 @@ model UserAIUsage {
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   date            DateTime @default(now()) // Stored as start of day
   modelName       String   // e.g., "gemini-2.5-pro"
-  type            String   // "EVALUATION" | "GENERATION" | "CONTENT_SEED"
+  type            String   // "EVALUATION" | "GENERATION" | "CONTENT_SEED" | "TRANSCRIPTION"
   callCount       Int      @default(0)
   estimatedTokens Int      @default(0)
+
+  // Enhanced cost tracking (PI 1)
+  tokensInput     Int?     @default(0)
+  tokensOutput    Int?     @default(0)
+  actualCostUsd   Float?   @default(0)
+  cacheHit        Boolean  @default(false)
+
   updatedAt       DateTime @updatedAt
 
   @@unique([userId, date, modelName, type])
   @@index([userId, date])
   @@map("user_ai_usage")
+}
+
+// ============================================================
+// System Health Monitoring
+// ============================================================
+
+model SystemHealthCheck {
+  id           String   @id @default(uuid())
+  service      String   // "DATABASE", "INNGEST", "GEMINI_API", "AUTH", "REDIS"
+  status       String   // "HEALTHY", "DEGRADED", "DOWN"
+  latencyMs    Int?
+  errorMessage String?  @db.Text
+  checkedAt    DateTime @default(now())
+
+  @@index([service, checkedAt])
+  @@map("system_health_checks")
+}
+
+// ============================================================
+// Admin Audit Log
+// ============================================================
+
+model AdminAuditLog {
+  id          String   @id @default(uuid())
+  adminId     String   // Who performed the action
+  targetId    String?  // User ID being acted upon
+  action      String   // "DISABLE_USER", "ENABLE_USER", "CHANGE_PLAN", "CHANGE_ROLE", "TOGGLE_FEATURE"
+  oldValue    Json?    // Previous state
+  newValue    Json?    // New state
+  reason      String?  // Admin-provided reason
+  createdAt   DateTime @default(now())
+
+  @@index([adminId, createdAt])
+  @@index([targetId, createdAt])
+  @@index([action, createdAt])
+  @@map("admin_audit_logs")
 }
 // ============================================================
 // System Observability (Admin Logs)
@@ -688,4 +793,104 @@ model SystemLog {
   @@index([category, createdAt])
   @@index([userId, createdAt])
   @@map("system_logs")
+}
+
+// ============================================================
+// AI Self-Learning & Validation
+// ============================================================
+
+model AIValidation {
+  id              String   @id @default(uuid())
+  type            String   // "TRANSCRIPTION" | "EVALUATION"
+  targetId        String   // Submission ID or Question ID
+  
+  // What the AI said
+  aiOutput        Json
+  
+  // What the Human corrected it to (null if AI was correct)
+  humanCorrection Json?
+  
+  // Context for self-learning
+  isCorrect       Boolean  @default(true)
+  feedback        String?  @db.Text
+  
+  // Metadata for filtering
+  subjectId       String?
+  grade           String?
+  modelName       String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([type, isCorrect])
+  @@index([targetId])
+  @@map("ai_validations")
+}
+
+// ============================================================
+// Institutional Content & School Management
+// ============================================================
+
+model School {
+  id        String   @id @default(uuid())
+  name      String
+  state     String?
+  district  String?
+  board     String   @default("CBSE")
+  
+  users             User[] 
+  examPatterns      SchoolExamPattern[]
+  sourceDocuments   SourceDocument[]
+  questions         Question[] 
+  assignments       Assignment[]
+  studyMaterials    StudyMaterial[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  @@map("schools")
+}
+
+model SourceDocument {
+  id          String   @id @default(uuid())
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  
+  title       String
+  type        String   // "UNIT_TEST", "HALF_YEARLY", "FINAL", "WORKSHEET"
+  grade       String
+  subjectId   String
+  subject     Subject  @relation(fields: [subjectId], references: [id])
+  
+  // Ephemeral: We store the text context, but discard the raw file after processing.
+  textContent String   @db.Text 
+  
+  status      String   @default("ANALYZED") // "ANALYZED", "FAILED"
+  
+  questions   Question[]
+  
+  createdAt   DateTime @default(now())
+  @@map("source_documents")
+}
+
+model SchoolExamPattern {
+  id          String   @id @default(uuid())
+  schoolId    String
+  school      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  
+  grade       String
+  subjectId   String
+  examType    String   // "UNIT_TEST", "HALF_YEARLY", "FINAL"
+  
+  // JSON describing the blueprint: count of question types, total marks, etc.
+  blueprint   Json     
+  
+  // Self-learning context for AI generation
+  aiPromptContext String? @db.Text 
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([schoolId, grade, subjectId, examType])
+  @@map("school_exam_patterns")
 }

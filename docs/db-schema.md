@@ -20,9 +20,13 @@ User ──┬── Account (Auth.js)
        ├── PracticeSession ──▶ SessionQuestion ──▶ Question ──▶ Subtopic
        ├── Submission (legacy, readonly) ──▶ Assignment (legacy, readonly)
        ├── StudyStreak
-       └── Notification
+       ├── Notification
+       ├── UserAIUsage (daily AI cost tracking)
+       └── SystemHealthCheck (service diagnostics)
 
 Question ──▶ Subtopic
+AdminAuditLog ──▶ User (action trail)
+SystemLog ──▶ User (observability)
 ```
 
 ## Model Reference
@@ -43,6 +47,25 @@ Question ──▶ Subtopic
 | `UserMastery` | Per-subtopic mastery | `masteryScore` (0-100), `stability` (days), `lastPracticed`, `errorPatterns` (JSON) |
 | `StudyStreak` | Habit tracking | `currentStreak`, `longestStreak`, `lastStudyDate` (validates actual learning) |
 
+### Subscription & Access Control
+
+| Model | Purpose | Key Fields |
+|-------|---------|-----------|
+| `User` (enhanced) | Subscription state | `role` (STUDENT/ADMIN/SUPER_ADMIN), `subscriptionPlan` (FREE/PRO), `subscriptionStatus` (ACTIVE/EXPIRED), `subscriptionExpiresAt`, `isActive` |
+| `UserAIUsage` | Daily AI cost tracking | `date`, `modelName`, `totalCalls`, `totalTokens`, `actualCostUsd` |
+| `SystemHealthCheck` | Service diagnostics | `service` (DATABASE/GEMINI_API/INNGEST), `status` (HEALTHY/DEGRADED/DOWN), `latencyMs`, `errorMessage`, `checkedAt` |
+| `AdminAuditLog` | Admin action trail | `action` (USER_UPDATED/GATE_TOGGLED), `targetType`, `targetId`, `oldValues`, `newValues`, `performedById`, `performedAt` |
+| `SystemLog` | Observability | `level` (INFO/WARN/ERROR), `category` (AI/DB/AUTH), `message`, `metadata` (JSON) |
+
+**Subscription Limits (Enforced):**
+
+| Plan | Assignments/Day | Assignments/Month | Evaluations/Day |
+|------|-----------------|-------------------|-----------------|
+| FREE | 3 | 10 | 10 |
+| PRO | 50 | 500 | 100 |
+
+**Shadow Mode:** `FEATURE_GATES_ENABLED=shadow` — logs violations but doesn't block. Default is enforcement ON.
+
 ### Learning Content
 
 | Model | Purpose | Key Fields |
@@ -58,6 +81,16 @@ Question ──▶ Subtopic
 | `Assignment` | Old weekly assignments | Keep for historical submissions; no new creation |
 | `Submission` | Old submission records | Read-only; migrated to `PracticeSession` over time |
 | `SystemLog` | Admin observability logs | Categorized system/AI events with JSON metadata |
+
+### Observability
+
+| Model | Purpose | Key Fields |
+|-------|---------|-----------|
+| `SystemHealthCheck` | Per-service health status | `service`, `status`, `latencyMs`, `errorMessage`, `checkedAt` |
+| `AdminAuditLog` | Immutable admin action log | `action`, `targetType`, `targetId`, `oldValues`, `newValues`, `performedById` |
+| `SystemLog` | General system events | `level`, `category`, `message`, `metadata` (JSON) |
+
+> **Note:** `SystemHealthCheck` records are historical. The `/admin/system` page runs live checks on load for real-time status.
 
 ## Indexes
 

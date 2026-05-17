@@ -11,8 +11,12 @@ export const BATCH_EVALUATION_PROMPT = (params: {
   grade: string;
   subject: string;
   questions: BatchEvaluationQuestion[];
+  fewShotContext?: string;
 }) => `
 You are a senior CBSE Class ${params.grade} ${params.subject} examiner. 
+
+${params.fewShotContext || ""}
+
 Evaluate the following student answers fairly, focusing on conceptual understanding, numerical accuracy, and logical derivation.
 
 ### Evaluation Guidelines:

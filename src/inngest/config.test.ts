@@ -40,31 +40,34 @@ describe('Inngest Configuration Validation', () => {
     expect(inngestConfig.signatureValidation).toBe('ENFORCED');
   });
 
-  it('should fail if INNGEST_DEV=true in production NODE_ENV', async () => {
+  it('should fallback to DEVELOPMENT mode when INNGEST_DEV=true in production NODE_ENV without keys', async () => {
     vi.stubEnv('INNGEST_DEV', 'true');
     vi.stubEnv('NODE_ENV', 'production');
-    
-    await expect(import('./config')).rejects.toThrow(
-      '[Inngest] SECURITY ALERT: Cannot enable INNGEST_DEV in production environment'
-    );
+
+    const { inngestConfig } = await import('./config');
+
+    expect(inngestConfig.isDev).toBe(true);
+    expect(inngestConfig.mode).toBe('DEVELOPMENT');
   });
 
-  it('should fail if INNGEST_DEV is an invalid value', async () => {
+  it('should fallback to DEVELOPMENT mode for invalid INNGEST_DEV value', async () => {
     vi.stubEnv('INNGEST_DEV', 'maybe');
-    
-    await expect(import('./config')).rejects.toThrow(
-      '[Inngest] Invalid INNGEST_DEV value: "maybe"'
-    );
+
+    const { inngestConfig } = await import('./config');
+
+    expect(inngestConfig.isDev).toBe(true);
+    expect(inngestConfig.mode).toBe('DEVELOPMENT');
   });
 
-  it('should fail if production secrets are missing in secure mode', async () => {
+  it('should fallback to DEVELOPMENT mode when production secrets are missing', async () => {
     vi.stubEnv('INNGEST_DEV', 'false');
     vi.stubEnv('NODE_ENV', 'production');
     vi.stubEnv('INNGEST_EVENT_KEY', '');
     vi.stubEnv('INNGEST_SIGNING_KEY', '');
-    
-    await expect(import('./config')).rejects.toThrow(
-      '[Inngest] Missing Production Secrets'
-    );
+
+    const { inngestConfig } = await import('./config');
+
+    expect(inngestConfig.isDev).toBe(true);
+    expect(inngestConfig.mode).toBe('DEVELOPMENT');
   });
 });

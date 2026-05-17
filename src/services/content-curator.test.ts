@@ -36,6 +36,13 @@ vi.mock("@/lib/gemini", () => ({
   callGemini: vi.fn(),
 }));
 
+vi.mock("./video-curator", () => ({
+  curateVideosForTopic: vi.fn(() => Promise.resolve([
+    { videoId: "mock-video-id", title: "Mock Video", description: "Mock Desc", channelName: "Mock Channel", relevanceScore: 90, keyMoments: [] }
+  ])),
+  saveCuratedVideos: vi.fn(() => Promise.resolve()),
+}));
+
 describe("content-curator", () => {
   const mockTopicId = "topic-123";
   const mockTopic = {
@@ -99,6 +106,7 @@ describe("content-curator", () => {
     const { fetchYouTubeMeta } = await import("@/lib/youtube");
     (fetchYouTubeMeta as any).mockResolvedValue({ thumbnailUrl: "thumb", title: "Video Title" });
 
+    const { curateVideosForTopic, saveCuratedVideos } = await import("./video-curator");
     const result = await saveContentPack(mockTopicId, mockPack);
 
     expect(result.materialId).toBe(`ai-notes-${mockTopicId}`);
@@ -109,10 +117,9 @@ describe("content-curator", () => {
       where: { id: `ai-notes-${mockTopicId}` }
     }));
 
-    // Verify video ref was saved
-    expect(prisma.studyMaterial.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: `ai-video-${mockTopicId}-dQw4w9WgXcQ` }
-    }));
+    // Verify Phase 2 Video Curation was triggered
+    expect(curateVideosForTopic).toHaveBeenCalled();
+    expect(saveCuratedVideos).toHaveBeenCalled();
 
     // Verify question bank seeding
     expect(prisma.question.create).toHaveBeenCalled();
@@ -155,7 +162,7 @@ describe("content-curator", () => {
     };
 
     const result = await saveContentPack(mockTopicId, emptyPack);
-    expect(result.materialsCreated).toBe(1);
+    expect(result.materialsCreated).toBe(2);
     expect(prisma.question.create).not.toHaveBeenCalled();
   });
 
@@ -172,31 +179,5 @@ describe("content-curator", () => {
     expect(prisma.studyMaterial.upsert).toHaveBeenCalled();
   });
 
-  it("seeds youtube video only if meta fetch succeeds (strict mode)", async () => {
-    (prisma.topic.findUniqueOrThrow as any).mockResolvedValue(mockTopic);
-    (prisma.studyMaterial.upsert as any).mockResolvedValue({});
-    const { fetchYouTubeMeta } = await import("@/lib/youtube");
-    
-    const multiVideoPack = {
-      ...mockPack,
-      youtubeVideos: [
-        { videoId: "invalid-id", title: "Broken" },
-        { videoId: "dQw4w9WgXcQ", title: "Valid" }
-      ]
-    };
-
-    // Mock fetchYouTubeMeta to fail for the first ID and succeed for the second
-    (fetchYouTubeMeta as any)
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({ thumbnailUrl: "thumb", title: "Video Title" });
-
-    await saveContentPack(mockTopicId, multiVideoPack);
-    
-    // Should have been called for notes (1) + only 1 valid video (1) = 2 times
-    expect(prisma.studyMaterial.upsert).toHaveBeenCalledTimes(2);
-    expect(prisma.studyMaterial.upsert).toHaveBeenCalledWith(expect.objectContaining({
-      where: { id: `ai-video-${mockTopicId}-dQw4w9WgXcQ` }
-    }));
-  });
 });
 

@@ -36,7 +36,7 @@ const navItems = [
   { href: "/leaderboard", label: "Leaderboard", icon: Trophy, color: "text-amber-500", glow: "group-hover:text-amber-400" },
   { href: "/playbook", label: "Playbook", icon: BookOpen, color: "text-rose-500", glow: "group-hover:text-rose-400" },
   { href: "/profile", label: "Profile", icon: User, color: "text-cyan-500", glow: "group-hover:text-cyan-400" },
-];
+] as const;
 
 interface NavbarUser {
   id?: string;

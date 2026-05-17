@@ -7,8 +7,8 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   
-  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
-  --font-heading: var(--font-outfit), system-ui, -apple-system, sans-serif;
+  --font-sans: var(--font-sans), system-ui, -apple-system, sans-serif;
+  --font-heading: var(--font-sans), system-ui, -apple-system, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   --color-sidebar-ring: var(--sidebar-ring);
@@ -43,71 +43,71 @@
   --radius-xl: calc(var(--radius) * 1.5);
   --radius-2xl: calc(var(--radius) * 2.5);
   
-  --shadow-premium: 0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+  --shadow-premium: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
   --shadow-glass: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
 }
 
 :root {
-  /* High-end Slate & Indigo Palette */
+  /* High-end Slate & Indigo Palette - HIGH CONTRAST UPGRADE */
   --background: oklch(0.985 0.002 240); /* Soft white with hint of slate */
-  --foreground: oklch(0.25 0.02 240);
+  --foreground: oklch(0.15 0.02 240); /* Deepened from 0.25 to 0.15 for high contrast */
   
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.25 0.02 240);
+  --card-foreground: oklch(0.15 0.02 240);
   
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.25 0.02 240);
+  --popover-foreground: oklch(0.15 0.02 240);
   
   --primary: oklch(0.55 0.2 260); /* Deep, sophisticated Indigo */
   --primary-foreground: oklch(0.99 0.01 260);
   
   --secondary: oklch(0.96 0.01 260);
-  --secondary-foreground: oklch(0.4 0.1 260);
+  --secondary-foreground: oklch(0.35 0.08 260);
   
   --muted: oklch(0.95 0.01 240);
-  --muted-foreground: oklch(0.45 0.02 240); /* Darkened from 0.55 to 0.45 for better contrast */
+  --muted-foreground: oklch(0.35 0.02 240); /* Sharpened from 0.45 to 0.35 */
   
   --accent: oklch(0.93 0.03 260);
-  --accent-foreground: oklch(0.4 0.15 260);
+  --accent-foreground: oklch(0.3 0.12 260);
   
   --destructive: oklch(0.6 0.18 25);
   --destructive-foreground: oklch(0.98 0.01 25);
   
-  --border: oklch(0.92 0.01 240);
-  --input: oklch(0.92 0.01 240);
+  --border: oklch(0.88 0.01 240); /* Sharpened from 0.92 to 0.88 */
+  --input: oklch(0.88 0.01 240);
   --ring: oklch(0.55 0.2 260 / 20%);
   
   --radius: 0.75rem;
   
-  /* Sidebar refined */
+  /* Sidebar high contrast */
   --sidebar: oklch(0.99 0.005 240);
-  --sidebar-foreground: oklch(0.3 0.02 240);
+  --sidebar-foreground: oklch(0.2 0.02 240); /* Deepened for readability */
   --sidebar-primary: oklch(0.55 0.2 260);
   --sidebar-primary-foreground: oklch(0.99 0.01 260);
   --sidebar-accent: oklch(0.96 0.01 260);
   --sidebar-accent-foreground: oklch(0.55 0.2 260);
-  --sidebar-border: oklch(0.94 0.01 240);
+  --sidebar-border: oklch(0.9 0.01 240); /* Sharpened */
   --sidebar-ring: oklch(0.55 0.2 260 / 20%);
 }
 
 .dark {
   --background: oklch(0.12 0.015 260); /* Deep midnight blue/slate */
-  --foreground: oklch(0.95 0.01 260);
+  --foreground: oklch(0.98 0.01 260); /* Elevated to 0.98 for crispness */
   
   --card: oklch(0.16 0.02 260);
-  --card-foreground: oklch(0.95 0.01 260);
+  --card-foreground: oklch(0.98 0.01 260);
   
   --popover: oklch(0.16 0.02 260);
-  --popover-foreground: oklch(0.95 0.01 260);
+  --popover-foreground: oklch(0.98 0.01 260);
   
   --primary: oklch(0.65 0.18 260); /* Brighter indigo for dark mode */
   --primary-foreground: oklch(0.1 0.02 260);
   
   --secondary: oklch(0.22 0.03 260);
-  --secondary-foreground: oklch(0.85 0.05 260);
+  --secondary-foreground: oklch(0.92 0.04 260);
   
   --muted: oklch(0.22 0.02 260);
-  --muted-foreground: oklch(0.75 0.03 260); /* Brightened from 0.65 to 0.75 for better contrast in dark mode */
+  --muted-foreground: oklch(0.82 0.02 260); /* Elevated from 0.75 to 0.82 */
   
   --accent: oklch(0.25 0.05 260);
   --accent-foreground: oklch(0.9 0.05 260);

@@ -2,10 +2,10 @@ import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { redirect } from "next/navigation";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { EditProfileModal } from "./edit-profile-modal";
+import { PlanUpgradeModal } from "./plan-upgrade-modal";
 import {
   User,
   Mail,
@@ -17,7 +17,9 @@ import {
   Flame,
   Globe,
   MapPin,
+  Crown,
 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 async function getProfileData(userId: string) {
   const user = await prisma.user.findUnique({
@@ -112,6 +114,34 @@ export default async function ProfilePage() {
               school: user.school,
               leaderboardOptIn: user.leaderboardOptIn,
             }} />
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Subscription Status */}
+      <Card className="shadow-premium border-border/50">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${user.subscriptionPlan === "PRO" ? "bg-amber-100" : "bg-gray-100"}`}>
+                <Crown className={`h-5 w-5 ${user.subscriptionPlan === "PRO" ? "text-amber-600" : "text-gray-500"}`} />
+              </div>
+              <div>
+                <p className="text-sm font-medium">
+                  {user.subscriptionPlan === "PRO" ? "Pro Plan" : "Free Plan"}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {user.subscriptionStatus === "ACTIVE"
+                    ? user.subscriptionPlan === "PRO"
+                      ? "Unlimited access to all AI features"
+                      : "3 assignments/day limit"
+                    : user.subscriptionStatus === "EXPIRED"
+                      ? "Subscription expired — Renew to continue"
+                      : "Active"}
+                </p>
+              </div>
+            </div>
+            <PlanUpgradeModal currentPlan={user.subscriptionPlan || "FREE"} />
           </div>
         </CardContent>
       </Card>

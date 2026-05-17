@@ -1,5 +1,5 @@
 # Architecture Standards
-# Stack: Next.js 16 · Neon PostgreSQL · Prisma v7 · Google Gemini · Auth.js v5
+# Stack: Next.js 16 · Neon PostgreSQL · Prisma v7 · Google Gemini · Auth.js v5 · Tailwind 4
 
 ---
 
@@ -63,6 +63,15 @@ const nextConfig: NextConfig = {
 
 ---
 
+### ✅ Tailwind CSS 4
+
+- [ ] Use `@theme` block in CSS for custom tokens, not `tailwind.config.js`
+- [ ] Prefer modern CSS features (OKLCH colors, container queries) supported by Tailwind 4
+- [ ] Use `cn()` utility from `lib/utils.ts` for conditional class merging
+- [ ] Avoid ad-hoc utility bloat; use the design system tokens
+
+---
+
 ### ✅ Auth.js v5 — Three-File Pattern
 
 This is the **most critical** architectural constraint. Violating it causes runtime crashes.
@@ -86,77 +95,26 @@ auth.edge.ts     → MIDDLEWARE ENTRY POINT
 proxy.ts         → acts as middleware, imports from auth.edge.ts ONLY
 ```
 
-**Correct JWT callback pattern:**
-```typescript
-// auth.ts — DB sync only on first sign-in
-async jwt({ token, user, trigger, session }) {
-  if (user) {
-    // `user` is only populated on initial sign-in — sync DB here
-    const dbUser = await prisma.user.upsert({ ... });
-    token.id = dbUser.id;
-    token.isOnboarded = dbUser.isOnboarded;
-  }
-  // Subsequent requests: token already has the data — no DB call needed
-
-  if (trigger === "update" && session?.isOnboarded !== undefined) {
-    token.isOnboarded = session.isOnboarded;
-  }
-  return token;
-},
-```
-
 ---
 
 ### ✅ Google Gemini AI Integration
 
-- [ ] `gemini-2.5-flash` for speed-critical paths: hints, quick feedback, formatting
-- [ ] `gemini-3.1-pro-preview` for quality-critical paths: subjective evaluation, content generation
+- [ ] Use `geminiFlashModels` (cascade starts with `gemini-2.5-flash`) for speed-critical paths
+- [ ] Use `geminiProModels` (cascade starts with `gemini-2.5-pro`) for quality-critical paths
 - [ ] All prompts are in `src/prompts/` — separated from business logic
 - [ ] User input is **never** directly string-interpolated into prompts without sanitization
-- [ ] All LLM JSON output parsed with `JSON.parse(text.trim())` inside try-catch
-- [ ] Cache key defined for repeatable prompts: `(topic, questionId, difficulty, hintLevel)`
-- [ ] Rate limit enforced: 30 AI requests/minute per user (in proxy.ts)
+- [ ] Use `callGemini()` wrapper from `lib/gemini.ts` for automatic cascade and retry
+- [ ] Use `parseGeminiJson()` for robust JSON extraction from markdown-fenced AI output
+- [ ] AI output is **always** validated with a Zod schema passed to `callGemini()`
 
-**Correct Gemini client pattern:**
-```typescript
-// src/lib/gemini.ts
-import { GoogleGenerativeAI } from "@google/generative-ai";
+---
 
-const globalForGemini = globalThis as unknown as {
-  gemini: GoogleGenerativeAI | undefined;
-};
+### ✅ Vitest — Testing Standards (DoD)
 
-export const gemini =
-  globalForGemini.gemini ??
-  new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
-
-if (process.env.NODE_ENV !== "production") globalForGemini.gemini = gemini;
-
-// Exporting fallback cascade models
-export const flashModel = gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
-export const proModel   = gemini.getGenerativeModel({ model: "gemini-3.1-pro-preview" });
-```
-
-**Correct AI service pattern:**
-```typescript
-// src/services/evaluation-engine.ts
-import { proModel } from "@/lib/gemini";
-import { EvaluationResultSchema } from "@/types/evaluation";
-
-export async function evaluateAnswer(context: EvaluationContext): Promise<EvaluationResult> {
-  const prompt = buildEvaluationPrompt(context); // from src/prompts/
-
-  try {
-    const result = await proModel.generateContent(prompt);
-    const text = result.response.text().trim();
-    const raw = JSON.parse(text);
-    return EvaluationResultSchema.parse(raw); // Zod validation
-  } catch (err) {
-    console.error("[evaluation-engine] AI evaluation failed:", err);
-    throw new Error("Evaluation failed — please try again");
-  }
-}
-```
+- [ ] **Unit Tests**: Every service in `src/services/` must have a corresponding `.test.ts` file
+- [ ] **Mocking**: Mock external dependencies (Prisma, Gemini) using `vi.mock()`
+- [ ] **Regression**: Run `npm run test` before every commit to ensure existing flows are intact
+- [ ] **Coverage**: Aim for 100% coverage on complex business logic (e.g., evaluation engines)
 
 ---
 
@@ -216,24 +174,6 @@ export async function POST(req: Request) {
 }
 ```
 
-### Database Transactions
-
-```typescript
-// ✅ Multi-step mutations in a transaction
-const [submission, _mastery] = await prisma.$transaction([
-  prisma.submission.create({ data: submissionData }),
-  prisma.userMastery.upsert({
-    where: { userId_topicId: { userId, topicId } },
-    update: { masteryScore: newScore },
-    create: { userId, topicId, masteryScore: newScore },
-  }),
-]);
-
-// ❌ Sequential awaits for related mutations
-const submission = await prisma.submission.create({ ... }); // BAD
-await prisma.userMastery.update({ ... }); // Not atomic
-```
-
 ---
 
 ## File & Folder Conventions
@@ -261,6 +201,17 @@ src/
 
 ---
 
+## Self-Review Checklist (Consistency)
+
+Before submitting code, check:
+1. **Consistency**: Does this follow the same naming conventions as existing files?
+2. **Review**: Have I reviewed the code against the "Three-File Pattern" for Auth?
+3. **Tests**: Have I added unit tests for new service logic?
+4. **Validation**: Does `npm run validate` pass?
+5. **Regressions**: Does `npm run test` pass for the entire project?
+
+---
+
 ## Common Pitfalls — This Project
 
 | Pitfall | Root Cause | Fix |
@@ -270,5 +221,4 @@ src/
 | `PrismaClient` in middleware crashing Edge | Middleware is Edge Runtime — no Node.js binary engines | Import `auth.edge.ts` in proxy.ts, never `auth.ts` |
 | `prisma generate` EPERM error | macOS sandbox blocks schema-engine writing to `~/.cache` | Run in user's terminal (not Antigravity terminal) |
 | Auth `CallbackRouteError` | JWT callback hits DB on every request, not just first sign-in | Only sync DB when `user` is populated (first sign-in) |
-| Google Fonts build failure | Sandbox blocks outbound network in `npm run build` | Only affects builds; dev server works fine |
 | Duplicate `callbacks` in spread config | `...authConfig` callbacks overwritten silently | One source of truth per callback: config for edge, auth.ts for node |

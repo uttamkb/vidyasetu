@@ -8,7 +8,13 @@ vi.mock("@/lib/gemini", () => ({
 }));
 
 vi.mock("@/prompts/transcription", () => ({
+  RAW_OCR_PROMPT: "raw-ocr-mock-prompt",
+  SEMANTIC_MAPPING_PROMPT: vi.fn(() => "semantic-mapping-mock-prompt"),
   TRANSCRIPTION_PROMPT: vi.fn(() => "mock-prompt"),
+}));
+
+vi.mock("./self-learning-service", () => ({
+  getFewShotContext: vi.fn(() => Promise.resolve("")),
 }));
 
 describe("transcription-engine", () => {
@@ -20,31 +26,47 @@ describe("transcription-engine", () => {
   ];
 
   it("transcribes exam paper from multiple images", async () => {
-    (callGemini as any).mockResolvedValue({
-      extractedAnswers: { 1: "A", 2: "Some text" }
-    });
+    (callGemini as any)
+      .mockResolvedValueOnce({
+        transcribedPages: [{ pageNumber: 1, rawText: "Q1 is A. Q2 is Some text" }]
+      })
+      .mockResolvedValueOnce({
+        extractedAnswers: { 1: "A", 2: "Some text" }
+      });
 
     const result = await transcribeExamPaper(mockAssignmentId, mockImages, mockQuestions);
 
     expect(result.extractedAnswers).toEqual({ 1: "A", 2: "Some text" });
-    expect(callGemini).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(callGemini).toHaveBeenNthCalledWith(
+      1,
+      "PRO",
       expect.arrayContaining([
-        "mock-prompt",
+        "raw-ocr-mock-prompt",
         expect.objectContaining({ inlineData: { data: "abcdef", mimeType: "image/png" } })
       ]),
+      expect.anything()
+    );
+    expect(callGemini).toHaveBeenNthCalledWith(
+      2,
+      "PRO",
+      expect.stringContaining("semantic-mapping-mock-prompt"),
       expect.anything()
     );
   });
 
   it("handles malformed image strings gracefully", async () => {
-    (callGemini as any).mockResolvedValue({ extractedAnswers: {} });
+    (callGemini as any)
+      .mockResolvedValueOnce({ transcribedPages: [] })
+      .mockResolvedValueOnce({ extractedAnswers: {} });
 
     // This hits the parts.length !== 2 branch
     await transcribeExamPaper(mockAssignmentId, ["invalid-image"], mockQuestions);
     
     // This hits the catch block
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    (callGemini as any)
+      .mockResolvedValueOnce({ transcribedPages: [] })
+      .mockResolvedValueOnce({ extractedAnswers: {} });
     // @ts-ignore
     await transcribeExamPaper(mockAssignmentId, [null], mockQuestions);
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Skipping malformed image string"));

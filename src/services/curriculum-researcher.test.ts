@@ -4,8 +4,8 @@ import { prisma } from "@/lib/db";
 import { callGemini } from "@/lib/gemini";
 
 // Mock dependencies
-vi.mock("@/lib/db", () => ({
-  prisma: {
+vi.mock("@/lib/db", () => {
+  const mockPrisma = {
     subject: {
       findUnique: vi.fn(),
     },
@@ -13,9 +13,15 @@ vi.mock("@/lib/db", () => ({
       create: vi.fn(),
       findMany: vi.fn(),
     },
-    $transaction: vi.fn((ops) => Promise.all(ops)),
-  },
-}));
+    $transaction: vi.fn((ops) => {
+      if (typeof ops === "function") {
+        return ops(mockPrisma);
+      }
+      return Promise.all(ops);
+    }),
+  };
+  return { prisma: mockPrisma };
+});
 
 vi.mock("@/lib/gemini", () => ({
   geminiProModels: [],

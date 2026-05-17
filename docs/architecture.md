@@ -1,6 +1,6 @@
 # VidyaSetu Architecture
 
-> Last Updated: May 2, 2026
+> Last Updated: May 14, 2026
 > Status: Active — reflects current production stack
 
 ## Overview
@@ -54,6 +54,11 @@ VidyaSetu is a Next.js 16 (App Router) application that serves as an adaptive le
 | `Logger` | Centralized dual-logging (Console + Database) for observability | `src/lib/logger.ts` |
 | `Inngest Client` | Event bus for async tasks (evaluation, generation) | `src/inngest/client.ts` |
 | `Constants` | Shared Indian states, subjects, and curriculum metadata | `src/lib/constants.ts` |
+| `Cache` | Multi-tier caching (Redis L1 + memory L2) for AI responses | `src/lib/cache.ts` |
+| `FeatureGate` | Runtime feature toggles with OFF/SHADOW/ON states | `src/lib/feature-gate.ts` |
+| `RequireAdmin` | Centralized admin auth guard with role validation | `src/lib/require-admin.ts` |
+| `RequireSubscription` | Subscription enforcement with shadow mode | `src/lib/require-subscription.ts` |
+| `FeatureGate` | Runtime feature toggles with OFF/SHADOW/ON states | `src/lib/feature-gate.ts` |
 
 ## Auth Architecture — Three-File Pattern
 
@@ -121,6 +126,56 @@ from bundling them (which causes `process.env.DATABASE_URL` to be undefined at r
 2. `LeaderboardEntry` upserted per user/period combination
 3. Ranking computed via SQL window function (`ROW_NUMBER() OVER (ORDER BY score DESC)`)
 
+## Admin Console
+
+Full admin dashboard at `/admin` with role-based access:
+
+| Page | Path | Access | Features |
+|------|------|--------|----------|
+| Dashboard | `/admin` | ADMIN+ | Stats, overview, quick actions |
+| Users | `/admin/users` | ADMIN+ | Paginated table, filters, edit modal |
+| System Health | `/admin/system` | ADMIN+ | Live DB/Gemini/Inngest status cards |
+| Feature Gates | `/admin/gates` | SUPER_ADMIN | Toggle features OFF/SHADOW/ON |
+| Curriculum | `/admin/curriculum` | ADMIN+ | Curriculum tree placeholder |
+| Content | `/admin/content` | ADMIN+ | Study materials placeholder |
+| Seeder | `/admin/seeder` | ADMIN+ | Background AI engine info |
+
+### Authorization Helpers
+- `requireAdmin()` — Allows ADMIN and SUPER_ADMIN, checks `isActive`
+- `requireSuperAdmin()` — Strict, only SUPER_ADMIN. Used for role changes and feature gates.
+
+## Subscription System
+
+### Enforcement Flow
+
+```
+Student Request → requireSubscription(userId, feature)
+  ├── User not found → 403
+  ├── Account disabled → 403 (shadow: log only)
+  ├── Subscription expired → 403 (shadow: log only)
+  ├── Daily limit reached → 403 (shadow: log only)
+  ├── Monthly limit reached → 403 (shadow: log only)
+  └── Access granted → incrementUsage() → Proceed
+```
+
+### Kill Switch
+
+| Env Var | Behavior |
+|---------|----------|
+| `FEATURE_GATES_ENABLED=shadow` (or unset) | Shadow mode — log only, don't block |
+| `FEATURE_GATES_ENABLED=true` | Not used — enforcement is ON by default |
+
+**Rollback:** Set `FEATURE_GATES_ENABLED=shadow` → all blocks stop immediately.
+
+### Plans
+
+| Plan | Assignments/Day | Assignments/Month | Evaluations/Day |
+|------|-----------------|-------------------|-----------------|
+| FREE | 3 | 10 | 10 |
+| PRO | 50 | 500 | 100 |
+
+**Redis counters:** `usage:daily:{userId}:{feature}:{dayKey}` and `usage:monthly:{userId}:{feature}:{monthKey}` with 48h/35d TTL.
+
 ## System Observability
 
 VidyaSetu uses a custom "Dual-Logging" framework to balance infrastructure monitoring with admin visibility.
@@ -152,7 +207,7 @@ AI costs are tracked per-user per-day in the `UserAIUsage` table, allowing admin
 ## Scalability Considerations
 
 - **AI Costs**: Use `gemini-2.5-flash` for hints/feedback; `gemini-2.5-pro` only for evaluation
-- **Caching**: Cache AI responses by `(topic, difficulty, questionId)` — target >60% cache hit
+- **Caching**: Multi-tier cache (Redis L1 + memory L2) for content packs, evaluations, and feedback. Target >60% hit rate.
 - **Leaderboard**: Pre-aggregate scores on submission, not at read time
 - **DB Indexes**: All leaderboard and submission queries must use indexed columns
 
@@ -160,10 +215,14 @@ AI costs are tracked per-user per-day in the `UserAIUsage` table, allowing admin
 
 - Auth.js v5 with Google OAuth (primary) and demo Credentials (MVP testing only)
 - All `/api/*` routes validate session via `auth()` from `@/lib/auth`
+- Admin APIs use `requireAdmin()` / `requireSuperAdmin()` for role-based access
+- Feature gates enable safe rollout with shadow mode (admin-only preview)
+- **Subscription enforcement**: `requireSubscription()` checks plan limits before AI calls
 - **Session Sync**: Profile updates (name, image, location) are synced to the browser via Auth.js `update()` and custom JWT callbacks.
 - AI prompts are parameterized; user content is never string-interpolated directly
 - Rate limit enforced: 30 AI requests/minute per user (implemented in `proxy.ts` middleware)
 - `DATABASE_URL` is server-only — never prefixed with `NEXT_PUBLIC_`
+- Admin routing: Admins visiting student pages are auto-redirected to `/admin`
 
 ## Known Environment Constraints
 

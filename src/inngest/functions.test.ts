@@ -1,15 +1,38 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { monthlySeeder, seedCurriculumStructure, seedTopicContent } from "./functions";
+import {
+  monthlySeeder,
+  seedCurriculumStructure,
+  seedTopicContent,
+  cleanStaleGeneratingAssignments,
+  retryFailedEvaluationsJob,
+  archiveOldAIValidationsJob,
+} from "./functions";
 import { prisma } from "@/lib/db";
 import { CurriculumResearcher } from "@/services/curriculum-researcher";
 import { generateTopicContentPack, saveContentPack, isContentOutdated } from "@/services/content-curator";
+import { inngest } from "@/inngest/client";
+
+vi.mock("@/inngest/client", () => ({
+  inngest: {
+    send: vi.fn().mockResolvedValue({}),
+    createFunction: vi.fn().mockImplementation((config, trigger, handler) => ({
+      fn: handler,
+      config,
+      trigger,
+    })),
+  },
+}));
 
 vi.mock("@/lib/db", () => ({
   prisma: {
     subject: { findMany: vi.fn(), findUnique: vi.fn() },
     topic: { findMany: vi.fn() },
-    studyMaterial: { findMany: vi.fn() }
-  }
+    studyMaterial: { findMany: vi.fn() },
+    assignment: { findMany: vi.fn(), updateMany: vi.fn() },
+    task: { findMany: vi.fn(), updateMany: vi.fn(), create: vi.fn() },
+    submission: { findUnique: vi.fn() },
+    aIValidation: { deleteMany: vi.fn() },
+  },
 }));
 
 vi.mock("@/services/curriculum-researcher", () => ({
@@ -50,8 +73,6 @@ describe("Inngest Functions", () => {
 
       const mockStep = createMockStep();
       
-      // Execute the Inngest handler. Inngest v3 stores the handler on .fn
-      // We pass a mock event and step context.
       const handler = (monthlySeeder as any).fn || (monthlySeeder as any).invoke;
       const result = await handler({ event: {}, step: mockStep });
 
@@ -109,7 +130,6 @@ describe("Inngest Functions", () => {
       const result = await handler({ event: { data: { subjectId: "sub-1" } }, step: mockStep });
       expect(mockStep.run).toHaveBeenCalled();
       expect(CurriculumResearcher.generateCurriculumStructure).not.toHaveBeenCalled();
-      // Since `step.run` returns { skipped: true }, the handler completes
       expect(result.status).toBe("completed");
     });
 
@@ -167,6 +187,131 @@ describe("Inngest Functions", () => {
       expect(generateTopicContentPack).toHaveBeenCalledWith("top-1");
       expect(saveContentPack).toHaveBeenCalledWith("top-1", mockPack);
       expect(result.result).toEqual({ success: true, saved: { count: 2 } });
+    });
+  });
+
+  describe("cleanStaleGeneratingAssignments", () => {
+    it("should mark stale assignments as failed", async () => {
+      vi.mocked(prisma.assignment.findMany).mockResolvedValue([
+        { id: "asgn-stale-1" },
+        { id: "asgn-stale-2" }
+      ] as any);
+      vi.mocked(prisma.assignment.updateMany).mockResolvedValue({ count: 2 } as any);
+
+      const mockStep = createMockStep();
+      const handler = (cleanStaleGeneratingAssignments as any).fn || (cleanStaleGeneratingAssignments as any).invoke;
+      const result = await handler({ event: {}, step: mockStep });
+
+      expect(prisma.assignment.findMany).toHaveBeenCalled();
+      expect(prisma.assignment.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["asgn-stale-1", "asgn-stale-2"] } },
+        data: { status: "FAILED" }
+      });
+      expect(result).toEqual({ cleaned: 2 });
+    });
+
+    it("should return 0 if no stale assignments exist", async () => {
+      vi.mocked(prisma.assignment.findMany).mockResolvedValue([]);
+
+      const mockStep = createMockStep();
+      const handler = (cleanStaleGeneratingAssignments as any).fn || (cleanStaleGeneratingAssignments as any).invoke;
+      const result = await handler({ event: {}, step: mockStep });
+
+      expect(prisma.assignment.findMany).toHaveBeenCalled();
+      expect(prisma.assignment.updateMany).not.toHaveBeenCalled();
+      expect(result).toEqual({ cleaned: 0 });
+    });
+  });
+
+  describe("retryFailedEvaluationsJob", () => {
+    it("should do nothing if there are no failed evaluation tasks", async () => {
+      vi.mocked(prisma.task.findMany).mockResolvedValue([]);
+      const mockStep = createMockStep();
+      const handler = (retryFailedEvaluationsJob as any).fn;
+      
+      const result = await handler({ event: {}, step: mockStep });
+      expect(result).toEqual({ retried: 0 });
+      expect(prisma.task.updateMany).not.toHaveBeenCalled();
+      expect(inngest.send).not.toHaveBeenCalled();
+    });
+
+    it("should re-dispatch evaluation event and mark task as completed", async () => {
+      vi.mocked(prisma.task.findMany).mockResolvedValue([
+        {
+          id: "task-fail-1",
+          type: "EVALUATION_FAILED",
+          status: "FAILED",
+          payload: { submissionId: "sub-1" },
+          createdAt: new Date(),
+        } as any,
+      ]);
+      vi.mocked(prisma.submission.findUnique).mockResolvedValue({
+        status: "IN_PROGRESS",
+        userId: "user-1",
+      } as any);
+
+      const mockStep = createMockStep();
+      const handler = (retryFailedEvaluationsJob as any).fn;
+      
+      const result = await handler({ event: {}, step: mockStep });
+      expect(result).toEqual({ retried: 1 });
+      expect(inngest.send).toHaveBeenCalledWith([
+        {
+          name: "app/submission.evaluate",
+          data: {
+            submissionId: "sub-1",
+            userId: "user-1",
+          },
+        },
+      ]);
+      expect(prisma.task.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["task-fail-1"] } },
+        data: { status: "COMPLETED" },
+      });
+    });
+
+    it("should skip already evaluated submissions but mark task completed", async () => {
+      vi.mocked(prisma.task.findMany).mockResolvedValue([
+        {
+          id: "task-fail-2",
+          type: "EVALUATION_FAILED",
+          status: "FAILED",
+          payload: { submissionId: "sub-already-eval" },
+          createdAt: new Date(),
+        } as any,
+      ]);
+      vi.mocked(prisma.submission.findUnique).mockResolvedValue({
+        status: "EVALUATED",
+        userId: "user-2",
+      } as any);
+
+      const mockStep = createMockStep();
+      const handler = (retryFailedEvaluationsJob as any).fn;
+      
+      const result = await handler({ event: {}, step: mockStep });
+      expect(result).toEqual({ retried: 0 });
+      expect(inngest.send).not.toHaveBeenCalled();
+      expect(prisma.task.updateMany).toHaveBeenCalledWith({
+        where: { id: { in: ["task-fail-2"] } },
+        data: { status: "COMPLETED" },
+      });
+    });
+  });
+
+  describe("archiveOldAIValidationsJob", () => {
+    it("should delete old validation records older than 90 days", async () => {
+      vi.mocked(prisma.aIValidation.deleteMany).mockResolvedValue({ count: 123 } as any);
+      
+      const mockStep = createMockStep();
+      const handler = (archiveOldAIValidationsJob as any).fn;
+      
+      const result = await handler({ event: {}, step: mockStep });
+      expect(result).toEqual({ deleted: 123 });
+      expect(prisma.aIValidation.deleteMany).toHaveBeenCalledWith({
+        where: {
+          createdAt: { lt: expect.any(Date) },
+        },
+      });
     });
   });
 });

@@ -5,12 +5,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { Clock, ArrowRight, Plus, RotateCcw } from "lucide-react";
+import { Clock, ArrowRight, Plus, RotateCcw, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { GenerateAIModal } from "./generate-ai-modal";
 import { ArchiveButton } from "./archive-button";
+import { GeneratingStatus } from "./generating-status";
 
-type AssignmentStatus = "NOT_STARTED" | "IN_PROGRESS" | "SUBMITTED" | "EVALUATED";
+type AssignmentStatus = "GENERATING" | "FAILED" | "NOT_STARTED" | "IN_PROGRESS" | "SUBMITTED" | "EVALUATED";
 
 interface AssignmentListItem {
   id: string;
@@ -31,7 +32,7 @@ interface AssignmentListItem {
 
 async function getAssignments(userId: string): Promise<AssignmentListItem[]> {
   const [user, assignments] = await Promise.all([
-    prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { archivedAssignments: true } }),
+    prisma.user.findUnique({ where: { id: userId }, select: { archivedAssignments: true } }),
     prisma.assignment.findMany({
       include: {
         subject: true,
@@ -45,6 +46,8 @@ async function getAssignments(userId: string): Promise<AssignmentListItem[]> {
     }),
   ]);
 
+  if (!user) redirect("/api/auth/signout");
+
   const archivedSet = new Set(user.archivedAssignments);
   const threeMonthsAgo = new Date();
   threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
@@ -53,9 +56,17 @@ async function getAssignments(userId: string): Promise<AssignmentListItem[]> {
     .filter((a) => !archivedSet.has(a.id))
     .map((a) => {
       const submission = a.submissions[0];
-      const status: AssignmentStatus = submission
-        ? (submission.status as AssignmentStatus)
-        : "NOT_STARTED";
+      let status: AssignmentStatus = "NOT_STARTED";
+      
+      if (a.status === "GENERATING") {
+        // 5-minute stale check
+        const isStale = (new Date().getTime() - new Date(a.createdAt).getTime()) > 5 * 60 * 1000;
+        status = isStale ? "FAILED" : "GENERATING";
+      } else if (a.status === "FAILED") {
+        status = "FAILED";
+      } else if (submission) {
+        status = submission.status as AssignmentStatus;
+      }
 
       return {
         id: a.id,
@@ -83,10 +94,14 @@ async function getAssignments(userId: string): Promise<AssignmentListItem[]> {
 }
 
 async function getSubjects(userId: string) {
-  const user = await prisma.user.findUniqueOrThrow({
+  const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { grade: true, board: true },
   });
+  if (!user) {
+    // If user is deleted (e.g. db reset) but session cookie exists, redirect to login
+    redirect("/api/auth/signout");
+  }
   return prisma.subject.findMany({
     where: { grade: user.grade, board: user.board },
     select: { id: true, name: true, color: true },
@@ -98,6 +113,8 @@ async function getSubjects(userId: string) {
 // Status styles
 // ─────────────────────────────────────────
 const STATUS_DOT: Record<string, string> = {
+  GENERATING: "bg-blue-400 animate-pulse",
+  FAILED: "bg-rose-500",
   NOT_STARTED: "bg-muted-foreground/40",
   IN_PROGRESS: "bg-amber-400",
   SUBMITTED: "bg-emerald-500",
@@ -105,6 +122,8 @@ const STATUS_DOT: Record<string, string> = {
 };
 
 const STATUS_LABEL: Record<string, string> = {
+  GENERATING: "Generating...",
+  FAILED: "Failed",
   NOT_STARTED: "Not Started",
   IN_PROGRESS: "In Progress",
   SUBMITTED: "Submitted",
@@ -129,7 +148,7 @@ export default async function AssignmentsPage() {
     getSubjects(session.user.id),
   ]);
 
-  const pending = assignments.filter((a) => a.status === "NOT_STARTED" || a.status === "IN_PROGRESS");
+  const pending = assignments.filter((a) => a.status === "NOT_STARTED" || a.status === "IN_PROGRESS" || a.status === "GENERATING" || a.status === "FAILED");
   const completed = assignments.filter((a) => a.status === "SUBMITTED" || a.status === "EVALUATED");
 
   return (
@@ -194,8 +213,8 @@ export default async function AssignmentsPage() {
 // Assignment Card
 // ─────────────────────────────────────────
 function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
-  const pct = a.percentageScore !== null ? Math.round(a.percentageScore) : (a.totalScore !== null ? Math.round((a.totalScore / a.maxMarks) * 100) : null);
   const isDone = a.status === "SUBMITTED" || a.status === "EVALUATED";
+  const pct = isDone && a.percentageScore !== null ? Math.round(a.percentageScore) : (isDone && a.totalScore !== null ? Math.round((a.totalScore / a.maxMarks) * 100) : null);
 
   return (
     <Card className="flex flex-col hover:shadow-md hover:border-primary/30 transition-all">
@@ -204,7 +223,9 @@ function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
           <Badge variant="outline" className="text-xs">{a.type.replace("_", " ")}</Badge>
           <div className="flex items-center gap-1.5">
             <div className={`w-2 h-2 rounded-full ${STATUS_DOT[a.status]}`} />
-            <span className="text-xs text-foreground/80 font-bold">{STATUS_LABEL[a.status]}</span>
+            <span className="text-xs text-foreground/80 font-bold">
+              {a.status === "GENERATING" ? <GeneratingStatus /> : STATUS_LABEL[a.status]}
+            </span>
             {isDone && (
               <Link href={`/assignments/${a.id}?retest=true`}>
                 <Button size="icon" variant="ghost" className="h-7 w-7 text-amber-600 hover:text-amber-700 hover:bg-amber-50" title="Take Retest">
@@ -267,13 +288,30 @@ function AssignmentCard({ assignment: a }: { assignment: AssignmentListItem }) {
 
         {/* CTA */}
         <div className="mt-4 pt-4 border-t">
-          <Link href={isDone ? `/submissions/${a.submissionId}` : `/assignments/${a.id}`}>
+          <Link href={isDone ? `/submissions/${a.submissionId}` : `/assignments/${a.id}`} className={a.status === "GENERATING" ? "pointer-events-none opacity-50" : ""}>
             <Button
               className="w-full gap-2"
-              variant={isDone ? "outline" : "default"}
+              variant={a.status === "FAILED" ? "destructive" : isDone ? "outline" : "default"}
+              disabled={a.status === "GENERATING"}
             >
-              {isDone ? "View Result" : a.status === "IN_PROGRESS" ? "Continue" : "Start"}
-              <ArrowRight className="h-4 w-4" />
+              {a.status === "GENERATING" ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  AI Generating...
+                </>
+              ) : a.status === "FAILED" ? (
+                <>
+                  <RotateCcw className="h-4 w-4" />
+                  Retry Generation
+                </>
+              ) : isDone ? (
+                "View Result"
+              ) : a.status === "IN_PROGRESS" ? (
+                "Continue"
+              ) : (
+                "Start"
+              )}
+              {a.status !== "GENERATING" && a.status !== "FAILED" && <ArrowRight className="h-4 w-4" />}
             </Button>
           </Link>
         </div>

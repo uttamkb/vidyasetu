@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Clock, AlertCircle, Palette, Printer, Camera, Upload, ArrowRight } from "lucide-react";
+import { Clock, AlertCircle, Palette, Printer, Camera, Upload, ArrowRight, Eye, FileText } from "lucide-react";
 import { DrawingCanvas } from "@/components/drawing-canvas";
 import { Question } from "@prisma/client";
+import { AITutorDialog } from "./ai-tutor-dialog";
+import { MathRenderer } from "@/components/math-renderer";
 
 /**
  * QuestionPointer — new schema shape stored in Assignment.questions Json field.
@@ -88,7 +90,7 @@ const PrintPaper = ({
                 {index + 1}.
               </div>
               <div className="flex-1">
-                <p className="font-bold text-sm leading-tight mb-2 text-slate-900">{qContent?.question}</p>
+                <MathRenderer content={qContent?.question || ""} className="font-bold text-sm leading-tight mb-2 text-slate-900" />
                 <div className="inline-flex items-center px-1.5 py-0 bg-slate-100 text-[8px] font-black text-slate-500 uppercase tracking-widest rounded">
                   {qContent?.maxMarks || qContent?.marks || 1} Marks
                 </div>
@@ -100,7 +102,7 @@ const PrintPaper = ({
                 {qContent?.options?.map((opt: string, i: number) => (
                   <div key={i} className="flex items-start gap-2 text-xs">
                     <span className="font-bold text-slate-400">({String.fromCharCode(65 + i)})</span>
-                    <span className="text-slate-700 font-medium">{opt}</span>
+                    <MathRenderer content={opt} className="text-slate-700 font-medium" />
                   </div>
                 ))}
               </div>
@@ -118,6 +120,77 @@ const PrintPaper = ({
   </div>
 );
 
+function HighlightedAnswer({ text }: { text: string }) {
+  if (!text || !text.includes("<mark>")) return null;
+  
+  return (
+    <div className="mb-3 p-4 bg-amber-50/50 border-2 border-amber-200/50 rounded-2xl">
+      <div className="flex items-center gap-2 mb-3 text-amber-700 text-[10px] font-black uppercase tracking-widest">
+        <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+        Review Required: AI is uncertain about these parts
+      </div>
+      <div 
+        className="text-sm leading-relaxed font-medium text-slate-700"
+        dangerouslySetInnerHTML={{ 
+          __html: text
+            .replace(/<mark>/g, '<span class="bg-amber-200/60 text-amber-950 px-1 rounded-md border-b-2 border-amber-400 font-bold">')
+            .replace(/<\/mark>/g, '</span>') 
+        }} 
+      />
+    </div>
+  );
+}
+
+const loadPdfJs = (): Promise<any> => {
+  return new Promise((resolve, reject) => {
+    if (typeof window === "undefined") {
+      resolve(null);
+      return;
+    }
+    if ((window as any).pdfjsLib) {
+      resolve((window as any).pdfjsLib);
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js";
+    script.onload = () => {
+      const pdfjs = (window as any).pdfjsLib;
+      pdfjs.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js";
+      resolve(pdfjs);
+    };
+    script.onerror = () => reject(new Error("Failed to load PDF.js"));
+    document.head.appendChild(script);
+  });
+};
+
+const convertPdfToImages = async (file: File): Promise<string[]> => {
+  const pdfjs = await loadPdfJs();
+  if (!pdfjs) return [];
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjs.getDocument({ data: arrayBuffer }).promise;
+  const imageUrls: string[] = [];
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const viewport = page.getViewport({ scale: 1.5 }); // Good resolution for OCR
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width;
+    canvas.height = viewport.height;
+    const ctx = canvas.getContext("2d");
+    
+    await page.render({
+      canvasContext: ctx!,
+      viewport: viewport
+    }).promise;
+
+    // Compress to 0.7 JPEG quality
+    const base64 = canvas.toDataURL("image/jpeg", 0.7);
+    imageUrls.push(base64);
+  }
+
+  return imageUrls;
+};
+
 export default function AssignmentForm({
   assignmentId,
   fullQuestions,
@@ -134,16 +207,63 @@ export default function AssignmentForm({
   subjectName?: string;
 }) {
   const router = useRouter();
-  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [answers, setAnswers] = useState<Record<string, string>>({}); // Changed to questionId-based mapping
   const [showCanvas, setShowCanvas] = useState<Record<number, boolean>>({});
   const [timeLeft, setTimeLeft] = useState(timeLimit ? timeLimit * 60 : null);
   const [submitting, setSubmitting] = useState(false);
   const [started, setStarted] = useState(false);
 
+  // Client-side image compression to stay within Cloud Run/Next.js limits
+  const compressImage = async (base64Str: string): Promise<string> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.src = base64Str;
+      img.onload = () => {
+        if (img.width < 800 && img.height < 600) {
+          alert(`Image quality too low: ${img.width}x${img.height}. Please upload a clear photo with at least 800x600 resolution for accurate CBSE text recognition.`);
+          resolve("");
+          return;
+        }
+
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 1600;
+        const MAX_HEIGHT = 1600;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height *= MAX_WIDTH / width;
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width *= MAX_HEIGHT / height;
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, width, height);
+        // Using 0.7 quality for a good balance of size and legibility
+        resolve(canvas.toDataURL('image/jpeg', 0.7));
+      };
+    });
+  };
+
   // New States for Offline Flow
   const [isOfflineFlow, setIsOfflineFlow] = useState(false);
   const [transcribing, setTranscribing] = useState(false);
   const [needsVerification, setNeedsVerification] = useState(false);
+  const [scanImages, setScanImages] = useState<string[]>([]);
+  const [originalAIAnswers, setOriginalAIAnswers] = useState<Record<string, string>>({});
+  const [confidenceScores, setConfidenceScores] = useState<Record<string, number>>({});
+  const [uncertainWords, setUncertainWords] = useState<Record<string, string[]>>({});
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [transcribeProgress, setTranscribeProgress] = useState("Initializing transcription pipeline...");
+  const scanPollerRef = useRef<NodeJS.Timeout | null>(null);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -155,13 +275,11 @@ export default function AssignmentForm({
     if (submitting) return;
     setSubmitting(true);
 
-    const answersArray = Object.entries(answers).map(([index, answer]) => {
-      const parsedIndex = parseInt(index);
-      const qPointer = fullQuestions[parsedIndex]?.pointer;
+    const answersArray = fullQuestions.map((item, index) => {
       return {
-        questionId: qPointer?.questionId,
-        questionIndex: parsedIndex,
-        userAnswer: answer,
+        questionId: item.pointer.questionId,
+        questionIndex: index,
+        userAnswer: answers[item.pointer.questionId] || "",
       };
     });
 
@@ -174,6 +292,27 @@ export default function AssignmentForm({
 
       const data = await res.json();
       if (data.success) {
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(`draft_answers_${assignmentId}`);
+        }
+        
+        // Capture AI validation feedback for any changed answers
+        const corrections: Array<{ questionId: string; aiOutput: string; humanCorrection: string }> = [];
+        Object.entries(answers).forEach(([qId, val]) => {
+          const orig = originalAIAnswers[qId] || "";
+          if (orig.trim() && orig.trim() !== val.trim()) {
+            corrections.push({ questionId: qId, aiOutput: orig, humanCorrection: val });
+          }
+        });
+
+        if (corrections.length > 0) {
+          fetch("/api/self-learning/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type: "TRANSCRIPTION", corrections }),
+          }).catch((err) => console.error("Failed to send AI transcription feedback:", err));
+        }
+
         router.push(`/submissions/${data.submissionId}`);
       } else {
         alert("Failed to submit assignment");
@@ -189,33 +328,113 @@ export default function AssignmentForm({
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
 
+    setScanError(null);
+
+    // 15MB Pre-flight check
+    for (const file of files) {
+      if (file.size > 15 * 1024 * 1024) {
+        setScanError(`File "${file.name}" exceeds the maximum 15MB upload limit. Please upload a compressed version.`);
+        return;
+      }
+    }
+
     setTranscribing(true);
+    setTranscribeProgress("Compressing and preprocessing document pages...");
     
-    // Convert all images to Base64
-    const imagePromises = files.map(file => new Promise<string>((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.readAsDataURL(file);
-    }));
-
-    const images = await Promise.all(imagePromises);
-
     try {
+      const processedImages: string[] = [];
+
+      for (const file of files) {
+        if (file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) {
+          const pdfImages = await convertPdfToImages(file);
+          processedImages.push(...pdfImages);
+        } else if (file.type.startsWith("image/")) {
+          const base64 = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(file);
+          });
+          const compressed = await compressImage(base64);
+          if (compressed) {
+            processedImages.push(compressed);
+          }
+        }
+      }
+
+      if (processedImages.length === 0) {
+        setScanError("No valid images or PDF pages found. Please ensure files are not corrupted.");
+        setTranscribing(false);
+        return;
+      }
+
+      setScanImages(processedImages);
+      setTranscribeProgress(`Uploading ${processedImages.length} prepared page(s) to AI pipeline...`);
+
+      // 2. Call Scan API
       const res = await fetch('/api/assignments/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ assignmentId, images }),
+        body: JSON.stringify({ assignmentId, images: processedImages }),
       });
-      const data = await res.json();
-      if (data.extractedAnswers) {
-        setAnswers(data.extractedAnswers);
-        setNeedsVerification(true);
-      } else {
-        alert("Unable to extract answers. Please try with clearer photos or PDF pages.");
+      
+      const triggerData = await res.json();
+      if (!triggerData.success || !triggerData.taskId) {
+        setScanError("Failed to queue transcription background job. Please try again.");
+        setTranscribing(false);
+        return;
       }
+
+      const taskId = triggerData.taskId;
+      let attempts = 0;
+      const MAX_ATTEMPTS = 60; // Max 3 minutes
+      
+      scanPollerRef.current = setInterval(async () => {
+        attempts++;
+        
+        // Granular visual progress progression
+        if (attempts <= 2) {
+          setTranscribeProgress("Initializing transcription engine...");
+        } else if (attempts <= 6) {
+          setTranscribeProgress(`Transcribing Page 1 of ${processedImages.length} with advanced OCR...`);
+        } else if (attempts <= 12 && processedImages.length >= 2) {
+          setTranscribeProgress(`Transcribing Page 2 of ${processedImages.length}...`);
+        } else if (attempts <= 18 && processedImages.length >= 3) {
+          setTranscribeProgress(`Transcribing Page 3 of ${processedImages.length}...`);
+        } else {
+          setTranscribeProgress("Mapping transcribed handwriting blocks to question IDs...");
+        }
+
+        if (attempts > MAX_ATTEMPTS) {
+          if (scanPollerRef.current) clearInterval(scanPollerRef.current);
+          setScanError("Transcription took too long. Please ensure sheets are well-lit and upload again.");
+          setTranscribing(false);
+          return;
+        }
+
+        try {
+          const statusRes = await fetch(`/api/assignments/scan?taskId=${taskId}`);
+          const statusData = await statusRes.json();
+
+          if (statusData.status === "COMPLETED") {
+            if (scanPollerRef.current) clearInterval(scanPollerRef.current);
+            setAnswers(prev => ({ ...prev, ...statusData.extractedAnswers }));
+            setOriginalAIAnswers(statusData.extractedAnswers || {});
+            setConfidenceScores(statusData.confidenceScores || {});
+            setUncertainWords(statusData.uncertainWords || {});
+            setNeedsVerification(true);
+            setTranscribing(false);
+          } else if (statusData.status === "FAILED") {
+            if (scanPollerRef.current) clearInterval(scanPollerRef.current);
+            setScanError(`Transcription failed: ${statusData.error || "Please capture your sheets under better lighting and try again."}`);
+            setTranscribing(false);
+          }
+        } catch (err) {
+          console.error("Error polling scan status:", err);
+        }
+      }, 3000);
     } catch (err) {
-      alert("Failed to transcribe paper. Please check your connection.");
-    } finally {
+      console.error("[handlePageScan] Error:", err);
+      setScanError(err instanceof Error ? err.message : "Failed to process scan. The file might be too large or corrupted.");
       setTranscribing(false);
     }
   };
@@ -248,13 +467,51 @@ export default function AssignmentForm({
     }
   }, [timeLeft, isOfflineFlow, started]);
 
-  const handleFileUpload = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
+  // Load draft answers from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem(`draft_answers_${assignmentId}`);
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed && typeof parsed === "object") {
+            setAnswers(parsed);
+          }
+        } catch (err) {
+          console.error("Failed to parse draft answers from localStorage:", err);
+        }
+      }
+    }
+  }, [assignmentId]);
+
+  // Save draft answers to localStorage when answers change
+  useEffect(() => {
+    if (typeof window !== "undefined" && Object.keys(answers).length > 0) {
+      localStorage.setItem(`draft_answers_${assignmentId}`, JSON.stringify(answers));
+    }
+  }, [answers, assignmentId]);
+
+  // Clean up active scan poller on unmount
+  useEffect(() => {
+    return () => {
+      if (scanPollerRef.current) {
+        clearInterval(scanPollerRef.current);
+      }
+    };
+  }, []);
+
+  const handleFileUpload = (questionId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onloadend = () => {
-      setAnswers((prev) => ({ ...prev, [index]: reader.result as string }));
+    reader.onloadend = async () => {
+      let content = reader.result as string;
+      // Compress if it's an image
+      if (file.type.startsWith('image/')) {
+        content = await compressImage(content);
+      }
+      setAnswers((prev) => ({ ...prev, [questionId]: content }));
     };
     reader.readAsDataURL(file);
   };
@@ -262,43 +519,136 @@ export default function AssignmentForm({
   // Verification Screen
   if (needsVerification) {
     return (
-       <Card className="no-print border-primary/20 shadow-2xl">
-         <CardHeader className="bg-primary/5 text-center pb-8 border-b">
-           <div className="mx-auto w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mb-4">
-             <Upload className="h-8 w-8 text-primary" />
-           </div>
-           <CardTitle className="text-2xl">Verify Extracted Answers</CardTitle>
-           <CardDescription className="max-w-md mx-auto">
-             Our AI has transcribed your handwritten paper. Please check the text below and fix any typos before final evaluation.
-           </CardDescription>
-         </CardHeader>
-         <CardContent className="space-y-8 pt-8 max-h-[60vh] overflow-y-auto px-6">
-           {fullQuestions.map((item, index) => (
-             <div key={index} className="space-y-3 p-5 border-2 rounded-xl bg-muted/30 transition-colors hover:bg-muted/50">
-                <div className="flex justify-between items-center">
-                   <p className="font-bold text-sm text-primary">Question {index + 1}</p>
-                   <Badge variant="outline" className="text-[10px]">{item.question?.type || "SUBJECTIVE"}</Badge>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 max-w-7xl mx-auto">
+        {/* Left Side: Original Scan Viewer */}
+        <Card className="no-print border-primary/20 shadow-2xl flex flex-col h-[85vh]">
+          <CardHeader className="bg-primary/5 border-b pb-4">
+            <CardTitle className="text-xl flex items-center gap-2">
+              <Eye className="h-5 w-5 text-primary" />
+              Original Answer Sheets
+            </CardTitle>
+            <CardDescription>
+              Refer to your uploaded papers on the left to verify the text on the right.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-y-auto p-6 bg-muted/20 space-y-6 flex flex-col items-center justify-start">
+            {scanImages.length > 0 ? (
+              scanImages.map((img, idx) => (
+                <div key={idx} className="relative group border shadow-md rounded-xl bg-white p-2 w-full max-w-md">
+                  <div className="absolute top-3 left-3 bg-black/60 text-white font-bold text-xs px-2.5 py-1 rounded-full backdrop-blur-sm z-10">
+                    Page {idx + 1}
+                  </div>
+                  <img
+                    src={img}
+                    alt={`Scanned page ${idx + 1}`}
+                    className="w-full h-auto rounded-lg object-contain select-none"
+                  />
                 </div>
-                <p className="text-xs font-medium text-muted-foreground leading-relaxed italic border-l-2 border-primary/20 pl-3">
-                  {(item.question?.content as any)?.question}
-                </p>
-                <textarea
-                   className="w-full border-2 rounded-lg p-4 text-sm font-medium focus:ring-2 focus:ring-primary/50 transition-all shadow-inner"
-                   value={answers[index] || ""}
-                   onChange={(e) => setAnswers(prev => ({ ...prev, [index]: e.target.value }))}
-                   rows={3}
-                   placeholder="AI could not read this answer. Please type it manually..."
-                />
-             </div>
-           ))}
-         </CardContent>
-         <div className="p-6 border-t bg-muted/10">
-           <Button onClick={handleSubmit} className="w-full py-8 text-xl font-black shadow-premium group" disabled={submitting}>
+              ))
+            ) : (
+              <div className="text-center text-muted-foreground my-auto space-y-2">
+                <FileText className="h-12 w-12 mx-auto text-muted-foreground/50 animate-pulse" />
+                <p className="font-semibold text-sm">No page scans found</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Right Side: Verification Editor */}
+        <Card className="no-print border-primary/20 shadow-2xl flex flex-col h-[85vh]">
+          <CardHeader className="bg-primary/5 pb-6 border-b">
+            <CardTitle className="text-xl flex items-center gap-2">
+              <Upload className="h-5 w-5 text-primary" />
+              Verify Extracted Answers
+            </CardTitle>
+            <CardDescription>
+              Check the text below and fix any typos before final evaluation.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-y-auto space-y-6 p-6">
+            {fullQuestions.map((item, index) => {
+              const qId = item.pointer.questionId;
+              const confidence = confidenceScores[qId];
+              const smudges = uncertainWords[qId] || [];
+
+              let confidenceBadge = null;
+              if (typeof confidence === 'number') {
+                if (confidence >= 85) {
+                  confidenceBadge = (
+                    <Badge className="bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/15 border-emerald-500/20 text-[10px] font-bold">
+                      Confidence: {confidence}%
+                    </Badge>
+                  );
+                } else if (confidence >= 60) {
+                  confidenceBadge = (
+                    <Badge className="bg-amber-500/10 text-amber-700 hover:bg-amber-500/15 border-amber-500/20 text-[10px] font-bold">
+                      Confidence: {confidence}%
+                    </Badge>
+                  );
+                } else {
+                  confidenceBadge = (
+                    <Badge className="bg-destructive/10 text-destructive hover:bg-destructive/15 border-destructive/20 text-[10px] font-bold animate-pulse">
+                      Needs Review ({confidence}%)
+                    </Badge>
+                  );
+                }
+              }
+
+              return (
+                <div key={qId} className="space-y-3 p-5 border-2 rounded-xl bg-muted/30 transition-colors hover:bg-muted/50">
+                  <div className="flex justify-between items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-sm text-primary">Question {index + 1}</p>
+                      {confidenceBadge}
+                    </div>
+                    <Badge variant="outline" className="text-[10px]">{item.question?.type || "SUBJECTIVE"}</Badge>
+                  </div>
+                  <MathRenderer 
+                    content={(item.question?.content as any)?.question || ""} 
+                    className="text-xs font-medium text-muted-foreground leading-relaxed italic border-l-2 border-primary/20 pl-3" 
+                  />
+                  <textarea
+                    className="w-full border-2 rounded-lg p-4 text-sm font-medium focus:ring-2 focus:ring-primary/50 transition-all shadow-inner"
+                    value={answers[qId] || ""}
+                    onChange={(e) => setAnswers(prev => ({ ...prev, [qId]: e.target.value }))}
+                    rows={3}
+                    placeholder="AI could not read this answer. Please type it manually..."
+                  />
+                  {smudges.length > 0 && (
+                    <div className="flex items-start gap-2 text-xs font-medium text-amber-700 bg-amber-500/5 p-3 rounded-lg border border-amber-500/10">
+                      <span className="mt-0.5">⚠️</span>
+                      <span>
+                        Uncertain words detected: <strong className="underline">{smudges.join(", ")}</strong>. Please verify their spelling in your answer.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </CardContent>
+          <div className="p-6 border-t bg-muted/10 flex gap-4">
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                if (confirm("Are you sure you want to discard this scan and upload new files? This will reset the verification screen.")) {
+                  setNeedsVerification(false);
+                  setOriginalAIAnswers({});
+                  setConfidenceScores({});
+                  setUncertainWords({});
+                }
+              }} 
+              className="py-8 px-6 font-bold border-2 hover:bg-destructive/5 hover:text-destructive hover:border-destructive/20 transition-all text-sm uppercase tracking-wider"
+              disabled={submitting}
+            >
+              Re-Scan
+            </Button>
+            <Button onClick={handleSubmit} className="flex-1 py-8 text-xl font-black shadow-premium group" disabled={submitting}>
               {submitting ? "Analyzing Answers..." : "Confirm & Get Result"}
               <ArrowRight className="h-6 w-6 ml-2 group-hover:translate-x-1 transition-transform" />
-           </Button>
-         </div>
-       </Card>
+            </Button>
+          </div>
+        </Card>
+      </div>
     );
   }
 
@@ -469,12 +819,42 @@ export default function AssignmentForm({
            </CardHeader>
            <CardContent className="space-y-6">
               <div className="flex flex-col items-center justify-center py-10 border-2 border-dashed border-amber-300 rounded-2xl bg-white/50">
-                 {transcribing ? (
-                    <div className="flex flex-col items-center space-y-4">
-                       <div className="w-12 h-12 border-4 border-amber-400 border-t-transparent rounded-full animate-spin" />
-                       <p className="font-bold text-amber-900">Analyzing your paper with AI...</p>
-                       <p className="text-xs text-amber-600">Please wait, transcribing your handwritten answers.</p>
-                    </div>
+                  {scanError ? (
+                     <div className="flex flex-col items-center space-y-4 max-w-md text-center px-6">
+                        <div className="p-3 bg-red-100 rounded-full text-red-600">
+                           <AlertCircle className="h-8 w-8 animate-bounce" />
+                        </div>
+                        <h4 className="font-bold text-lg text-red-900">Scan Analysis Unsuccessful</h4>
+                        <p className="text-sm text-red-600 leading-relaxed">
+                           {scanError}
+                        </p>
+                        <div className="flex gap-3 pt-2">
+                           <Button 
+                             onClick={() => setScanError(null)} 
+                             variant="outline" 
+                             className="border-red-200 text-red-700 hover:bg-red-50 font-bold"
+                           >
+                             Capture Again
+                           </Button>
+                           <Button 
+                             onClick={() => {
+                               setScanError(null);
+                               setIsOfflineFlow(false);
+                               setStarted(false);
+                             }} 
+                             variant="secondary"
+                             className="font-bold"
+                           >
+                             Choose Mode
+                           </Button>
+                        </div>
+                     </div>
+                  ) : transcribing ? (
+                     <div className="flex flex-col items-center space-y-4">
+                        <div className="w-12 h-12 border-4 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                        <p className="font-bold text-amber-900">Analyzing your paper with AI...</p>
+                        <p className="text-xs text-amber-600 font-medium px-4 text-center animate-pulse">{transcribeProgress}</p>
+                     </div>
                  ) : (
                     <>
                        <div className="p-4 bg-amber-100 rounded-full mb-4">
@@ -521,8 +901,9 @@ export default function AssignmentForm({
         <>
           {fullQuestions.map((item, index) => {
             const qData = item.question?.content as unknown as QuestionContent;
+            const qId = item.pointer.questionId;
             return (
-              <Card key={item.pointer.questionId} className="border-none shadow-premium overflow-hidden no-print">
+              <Card key={qId} className="border-none shadow-premium overflow-hidden no-print">
                 <div className="h-1 w-full bg-gradient-to-r from-primary/50 to-transparent" />
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-4">
@@ -534,22 +915,22 @@ export default function AssignmentForm({
                         {qData?.maxMarks || qData?.marks || 1} { (qData?.maxMarks || qData?.marks || 1) === 1 ? 'Mark' : 'Marks' }
                       </Badge>
                     </div>
-                    <Badge variant="outline" className="text-[10px] text-muted-foreground">ID: {item.pointer.questionId.slice(0, 8)}&hellip;</Badge>
+                    <Badge variant="outline" className="text-[10px] text-muted-foreground">ID: {qId.slice(0, 8)}&hellip;</Badge>
                   </div>
                 </CardHeader>
                 <CardContent>
                   {qData ? (
                     <div className="mb-4">
-                      <p className="text-sm font-medium mb-4 leading-relaxed">{qData.question}</p>
+                      <MathRenderer content={qData.question} className="text-sm font-medium mb-4 leading-relaxed" />
                       {qData.options && qData.options.length > 0 ? (
                         <div className="space-y-2 mb-3">
                           {qData.options.map((opt: string, i: number) => {
                             const optionLetter = String.fromCharCode(65 + i);
-                            const isSelected = answers[index] === optionLetter || answers[index] === opt;
+                            const isSelected = answers[qId] === optionLetter || answers[qId] === opt;
                             return (
                               <div
                                 key={i}
-                                onClick={() => setAnswers((prev) => ({ ...prev, [index]: optionLetter }))}
+                                onClick={() => setAnswers((prev) => ({ ...prev, [qId]: optionLetter }))}
                                 className={`flex items-center gap-3 p-3 border-2 rounded-xl cursor-pointer transition-all ${
                                   isSelected ? "bg-primary/10 border-primary shadow-sm" : "hover:bg-muted/50 border-transparent bg-muted/30"
                                 }`}
@@ -559,7 +940,7 @@ export default function AssignmentForm({
                                 }`}>
                                   {optionLetter}
                                 </div>
-                                <span className="text-sm font-medium">{opt}</span>
+                                <MathRenderer content={opt} className="text-sm font-medium" />
                               </div>
                             );
                           })}
@@ -579,18 +960,18 @@ export default function AssignmentForm({
                                 </Button>
                               </div>
                               <DrawingCanvas 
-                                initialDataUrl={answers[index]?.startsWith("data:image") ? answers[index] : undefined}
-                                onDrawEnd={(dataUrl) => setAnswers((prev) => ({ ...prev, [index]: dataUrl }))} 
+                                initialDataUrl={answers[qId]?.startsWith("data:image") ? answers[qId] : undefined}
+                                onDrawEnd={(dataUrl) => setAnswers((prev) => ({ ...prev, [qId]: dataUrl }))} 
                               />
                             </div>
                           ) : (
                             <>
-                              {answers[index]?.startsWith("data:image") ? (
+                              {answers[qId]?.startsWith("data:image") ? (
                                 <div className="space-y-3">
                                   <div className="relative group max-w-sm rounded-xl overflow-hidden border-2 border-primary/20 shadow-md">
-                                    <img src={answers[index]} alt="Answer Draft" className="w-full object-contain" />
+                                    <img src={answers[qId]} alt="Answer Draft" className="w-full object-contain" />
                                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
-                                       <Button variant="secondary" size="sm" onClick={() => setAnswers((prev) => { const next = {...prev}; delete next[index]; return next; })}>
+                                       <Button variant="secondary" size="sm" onClick={() => setAnswers((prev) => { const next = {...prev}; delete next[qId]; return next; })}>
                                           Replace Answer
                                        </Button>
                                     </div>
@@ -603,15 +984,28 @@ export default function AssignmentForm({
                                 </div>
                               ) : (
                                 <>
+                                  <HighlightedAnswer text={answers[qId] ?? ""} />
                                   <textarea
                                     className="w-full border-2 border-muted bg-muted/10 rounded-xl p-4 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary/30 transition-all font-medium leading-relaxed"
                                     placeholder="Type your explanation, formula steps, or reasoning here..."
-                                    value={answers[index] ?? ""}
+                                    value={answers[qId] ?? ""}
                                     onChange={(e) =>
-                                      setAnswers((prev) => ({ ...prev, [index]: e.target.value }))
+                                      setAnswers((prev) => ({ ...prev, [qId]: e.target.value }))
                                     }
                                     rows={5}
                                   />
+                                  {answers[qId]?.includes("<mark>") && (
+                                    <div className="flex justify-end -mt-10 mr-4 relative z-10">
+                                       <Button 
+                                         variant="secondary" 
+                                         size="xs" 
+                                         className="h-7 text-[10px] font-bold bg-white/80 backdrop-blur shadow-sm hover:bg-white"
+                                         onClick={() => setAnswers(prev => ({ ...prev, [qId]: prev[qId].replace(/<\/?mark>/g, "") }))}
+                                       >
+                                         Clear AI Tags
+                                       </Button>
+                                    </div>
+                                  )}
                                    <div className="flex flex-wrap items-center gap-3">
                                      <Button
                                        type="button"
@@ -629,7 +1023,7 @@ export default function AssignmentForm({
                                          accept="image/*,.pdf,application/pdf"
                                          capture="environment"
                                          className="absolute inset-0 opacity-0 cursor-pointer"
-                                         onChange={(e) => handleFileUpload(index, e)}
+                                         onChange={(e) => handleFileUpload(qId, e)}
                                        />
                                        <Button
                                          type="button"
@@ -640,6 +1034,11 @@ export default function AssignmentForm({
                                          <Camera className="h-4 w-4 mr-2" /> Photo or PDF
                                        </Button>
                                      </div>
+
+                                     <AITutorDialog 
+                                       questionId={qId} 
+                                       questionText={qData.question} 
+                                     />
                                    </div>
                                 </>
                               )}

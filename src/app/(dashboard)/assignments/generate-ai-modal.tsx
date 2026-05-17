@@ -126,9 +126,7 @@ export function GenerateAIModal({ subjects }: GenerateAIModalProps) {
         throw new Error(data.error ?? "Generation failed");
       }
 
-      const { assignment } = await res.json();
       setOpen(false);
-      router.push(`/assignments/${assignment.id}`);
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");

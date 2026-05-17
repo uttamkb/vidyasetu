@@ -16,27 +16,15 @@
  */
 
 import { prisma } from "@/lib/db";
-import { genAI, callGemini } from "@/lib/gemini";
+import { callGemini } from "@/lib/gemini";
 import { QuestionType, BloomLevel, StudyMaterial } from "@prisma/client";
-import { fetchYouTubeMeta, youTubeThumbnailUrl } from "@/lib/youtube";
+import { withCache } from "@/lib/cache";
+import { trackCacheHit } from "@/services/usage-tracker";
 
 export const LATEST_CONTENT_VERSION = "premium-v1";
 
-// ─────────────────────────────────────────────────────────
-// Dedicated model cascade for content generation (16K tokens)
-// ─────────────────────────────────────────────────────────
 
-const contentGenConfig = {
-  responseMimeType: "application/json",
-  temperature: 0.4,
-  maxOutputTokens: 16384,
-};
 
-const contentGenModels = [
-  genAI.getGenerativeModel({ model: "gemini-2.5-pro", generationConfig: contentGenConfig }),
-  genAI.getGenerativeModel({ model: "gemini-3.1-pro-preview", generationConfig: contentGenConfig }),
-  genAI.getGenerativeModel({ model: "gemini-pro-latest", generationConfig: contentGenConfig }),
-];
 
 // ─────────────────────────────────────────────────────────
 // Types
@@ -79,6 +67,26 @@ export interface ContentPack {
 // ─────────────────────────────────────────────────────────
 
 export async function generateTopicContentPack(topicId: string): Promise<ContentPack> {
+  // CACHE-FIRST: Check if we have a cached content pack for this topic + version
+  const { value: pack, fromCache } = await withCache(
+    "content-pack",
+    [topicId, LATEST_CONTENT_VERSION],
+    async () => {
+      return await generateTopicContentPackAI(topicId);
+    }
+  );
+
+  if (fromCache) {
+    console.log(`[content-curator] Cache hit for topic ${topicId}`);
+    trackCacheHit("system", "CONTENT_SEED", 16000).catch(() => {});
+  } else {
+    console.log(`[content-curator] Generated fresh content for topic ${topicId}`);
+  }
+
+  return pack;
+}
+
+async function generateTopicContentPackAI(topicId: string): Promise<ContentPack> {
   const topic = await prisma.topic.findUniqueOrThrow({
     where: { id: topicId },
     include: {
@@ -94,74 +102,93 @@ export async function generateTopicContentPack(topicId: string): Promise<Content
   const subtopicNames = topic.subtopics.map((s) => s.name).join(", ");
 
   const prompt = `
-You are an expert NCERT academic notes curator for CBSE Class ${subject.grade} ${subject.name}.
-Generate comprehensive, exam-focused smart notes for:
+You are an elite academic notes curator for CBSE Class ${subject.grade} ${subject.name}, equivalent to a premium National Coaching Institute (e.g., Allen, Physics Wallah).
+Your goal is to transform standard NCERT curriculum topics into "Coaching-Institute Grade" mastery study materials.
 
 Subject: ${subject.name}
 Chapter: ${chapter.name}
 Topic: ${topic.name}
 ${subtopicNames ? `Subtopics: ${subtopicNames}` : ""}
 
-CRITICAL CONSTRAINTS:
-1. Content MUST be strictly based on the NCERT textbook for Class ${subject.grade} ${subject.name} (2024-2025 edition).
-2. Do NOT include content from reference books (R.D. Sharma, S. Chand, etc.), coaching materials, or higher-grade syllabi.
-3. Explanations MUST BE BITE-SIZED and EXAM-FOCUSED. Think "Netflix for studying", not "PDF textbook".
-4. Do NOT make notes "long". Use short sentences, bullet points, and high-impact phrasing.
-5. All questions must be answerable using ONLY the NCERT textbook content.
-6. Include NCERT section/page references where possible (e.g., "Section 2.3" or "Activity 4.1").
+STRICT PEDAGOGICAL BOUNDARIES:
+1. **Fidelity to CBSE & NCERT Syllabus**: Focus strictly on topics and definitions included within the official Class ${subject.grade} CBSE textbook. You MUST NOT include advanced topics or concepts from higher-grade JEE/NEET syllabi, as that causes cognitive overload for board students.
+2. **Deep Explanations with Relatable Analogies**: Explain abstract ideas using step-by-step reasoning and intuitive real-world examples.
+3. **LaTeX Formatting**: For any mathematical equations, formulas, physical laws, or chemical reactions, ALWAYS format them using proper LaTeX syntax enclosed in double dollars ($$) for block math, or single dollars ($) for inline math (e.g. $F = ma$).
 
 Generate ALL 7 sections below. Return a JSON object in this EXACT format:
 
 {
   "coreConcepts": [
-    { "concept": "Concept Name", "explanation": "Punchy, 1-2 sentence explanation." }
+    { 
+      "concept": "Concept Name", 
+      "explanation": "Clear, deep explanation of the concept, step-by-step logic." 
+    }
   ],
   "microTopics": [
-    { "title": "Bite-sized sub-concept title", "summary": "Extremely brief, focused summary." }
+    { 
+      "title": "Bite-sized Sub-concept Heading", 
+      "summary": "Coaching-grade concise summary explaining what this sub-concept represents, with active tips." 
+    }
   ],
   "explanations": [
-    { "topic": "Sub-topic heading", "detail": "Short, bulleted explanation. No wall of text.", "ncertReference": "Section 2.3 / Activity 4.1" }
+    { 
+      "topic": "Key Sub-topic Area", 
+      "detail": "Detailed conceptual breakdown with a beautiful, illustrative explanation, mathematical derivation steps if any, and high-contrast styling reminders.", 
+      "ncertReference": "Page X / Section Y / Activity Z of Class ${subject.grade} NCERT" 
+    }
   ],
   "examples": [
-    { "title": "Example title", "problem": "Short problem statement.", "solution": "Clear, step-by-step solution." }
+    { 
+      "title": "Worked Example: [Topic Title]", 
+      "problem": "Clear problem statement matching typical Board / NCERT textbook style question.", 
+      "solution": "Step-by-step detailed mathematical or logical derivation, showing every middle step, leading to the final clear highlighted solution." 
+    }
   ],
   "misconceptions": [
-    { "wrong": "Common mistake", "correct": "Correct fact", "why": "1-sentence reason" }
+    { 
+      "wrong": "Common mistake or misconception students make", 
+      "correct": "The scientifically correct statement or step", 
+      "why": "Clear pedagogical explanation of WHY the wrong way fails and how the correct way aligns with physics/chemistry/math laws." 
+    }
   ],
   "revisionSheet": {
-    "keyFormulas": ["Formula 1", "Formula 2"],
-    "keyDates": ["Date/event if applicable (History/Civics)"],
-    "keyTerms": ["Term: short definition"],
-    "mnemonics": ["Memory aid or trick"]
+    "keyFormulas": ["Detailed LaTeX formula with definitions of each variable, e.g. $$F = q(E + v \\times B)$$ where F is Force..."],
+    "keyDates": ["Dates or chronological timeline events if history/humanities, else empty array"],
+    "keyTerms": ["Terminology: Strict NCERT definition"],
+    "mnemonics": ["Mnemonic or acronym to easily memorize this specific sequence or law"]
   },
   "selfAssessmentQuestions": [
-    { "type": "MCQ", "question": "Short easy question?", "options": ["A", "B", "C", "D"], "answer": "Correct option", "difficulty": "easy" },
-    { "type": "MCQ", "question": "Short medium question?", "options": ["A", "B", "C", "D"], "answer": "Correct option", "difficulty": "medium" },
-    { "type": "SHORT_ANSWER", "question": "Short hard question?", "answer": "Brief model answer.", "difficulty": "hard" }
+    { 
+      "type": "MCQ", 
+      "question": "Clear MCQ testing conceptual application (easy level)?", 
+      "options": ["Option A", "Option B", "Option C", "Option D"], 
+      "answer": "Correct Option Value", 
+      "difficulty": "easy" 
+    },
+    { 
+      "type": "MCQ", 
+      "question": "Clear MCQ testing deeper analytical application (medium level)?", 
+      "options": ["Option A", "Option B", "Option C", "Option D"], 
+      "answer": "Correct Option Value", 
+      "difficulty": "medium" 
+    },
+    { 
+      "type": "SHORT_ANSWER", 
+      "question": "Typical Board subjective 3-marker question?", 
+      "answer": "Complete, structured model answer that examiners look for, highlighted with key points.", 
+      "difficulty": "hard" 
+    }
   ],
-  "keyTakeaways": ["Punchy point 1", "Punchy point 2"],
+  "keyTakeaways": ["Coaching takeaway 1", "Coaching takeaway 2"],
   "terminology": [
-    { "term": "Term", "definition": "One-line definition." }
+    { "term": "Academic term", "definition": "Direct official board definition." }
   ],
   "youtubeVideos": [
-    { "videoId": "YouTube Video ID 1", "title": "Clear, descriptive video title 1" },
-    { "videoId": "YouTube Video ID 2", "title": "Clear, descriptive video title 2" },
-    { "videoId": "YouTube Video ID 3", "title": "Clear, descriptive video title 3" },
-    { "videoId": "YouTube Video ID 4", "title": "Clear, descriptive video title 4" },
-    { "videoId": "YouTube Video ID 5", "title": "Clear, descriptive video title 5" }
+    { "videoId": "dQw4w9WgXcQ", "title": "Introductory topic video" }
   ]
 }
 
-IMPORTANT:
-- FOR YOUTUBE: Provide exactly 5 real, high-quality, PUBLICLY available YouTube Video IDs. Prioritize popular videos (high views/likes) from reputable NCERT channels (e.g. Khan Academy India, Magnet Brains, ExamFear Education, LearnoHub). Ensure they are strictly relevant to the topic and NOT behind any paywall or private link. Do NOT hallucinate IDs; we will verify their existence before seeding.
-- STRICT LENGTH LIMIT: Absolute maximum of 2 most critical items per section. Pick ONLY the highest yield, most frequently tested concepts.
-- EXTREMELY BITE-SIZED: Keep explanations under 15 words. Use punchy phrasing. No fluff.
-- VISUAL & ENGAGING: Liberally use emojis (⚠️ for mistakes, 💡 for tips, 🔥 for hot topics).
-- Focus on what the student MUST know to pass, omitting edge cases.
-- Generate exactly 3 self-assessment questions (1 easy, 1 medium, 1 hard).
-- For Math/Science: prioritize formulas. For Humanities: prioritize timelines and themes.
-
-Return ONLY the JSON object.
+Ensure all fields are fully populated with high-quality educational content. Keep youtubeVideos populated with 3-5 real, relevant video IDs. Return ONLY the raw JSON object matching the above structure.
 `;
 
   const fallback: ContentPack = {
@@ -177,7 +204,7 @@ Return ONLY the JSON object.
     youtubeVideos: [],
   };
 
-  const pack = await callGemini<ContentPack>(contentGenModels, prompt, fallback);
+  const pack = await callGemini<ContentPack>("PRO", prompt, fallback);
 
   return pack;
 }
@@ -190,11 +217,11 @@ Return ONLY the JSON object.
  */
 export function isContentOutdated(materials: StudyMaterial[]): boolean {
   if (materials.length === 0) return true;
-  
+
   // Look for the platform notes (primary source of content)
   const mainNotes = materials.find(m => m.type === "PLATFORM_CONTENT");
   if (!mainNotes) return true;
-  
+
   // Check for version marker in description
   const versionMarker = `[Version: ${LATEST_CONTENT_VERSION}]`;
   return !mainNotes.description?.includes(versionMarker);
@@ -213,96 +240,8 @@ export async function saveContentPack(topicId: string, pack: ContentPack) {
   const chapter = topic.chapter;
   const subject = chapter.subject;
 
-  // ── Build 7-section markdown ──────────────────────────
+  // ── Persist to database ───────────────────────────────
 
-  const sections: string[] = [];
-
-  sections.push(`## ${topic.name} — NCERT Smart Notes`);
-
-  // Section 1: Core Concepts
-  if (pack.coreConcepts.length > 0) {
-    sections.push(`### 📚 Core Concepts`);
-    sections.push(pack.coreConcepts.map((c) => `* **${c.concept}**: ${c.explanation}`).join("\n"));
-  }
-
-  // Section 2: Micro-Topics
-  if (pack.microTopics && pack.microTopics.length > 0) {
-    sections.push(`### 🔬 Micro-Topics`);
-    sections.push(pack.microTopics.map((m) => `* **${m.title}**: ${m.summary}`).join("\n"));
-  }
-
-  // Section 3: Detailed Explanations
-  if (pack.explanations && pack.explanations.length > 0) {
-    sections.push(`### 📖 Deep Dives`);
-    for (const e of pack.explanations) {
-      const ref = e.ncertReference ? ` *(${e.ncertReference})*` : "";
-      sections.push(`**${e.topic}**${ref}\n\n> ${e.detail}\n`);
-    }
-  }
-
-  // Section 4: Worked Examples
-  if (pack.examples && pack.examples.length > 0) {
-    sections.push(`### 🎯 How to Solve`);
-    for (const ex of pack.examples) {
-      sections.push(`**${ex.title}**\n* ❓ **Q:** ${ex.problem}\n* ✅ **A:** ${ex.solution}\n`);
-    }
-  }
-
-  // Section 5: Common Misconceptions
-  if (pack.misconceptions && pack.misconceptions.length > 0) {
-    sections.push(`### 🛑 Common Mistakes`);
-    for (const m of pack.misconceptions) {
-      sections.push(`* ❌ **Don't say:** ${m.wrong}\n* ✅ **Do say:** ${m.correct}\n* 💡 **Why?** ${m.why}\n`);
-    }
-  }
-
-  // Section 6: Quick Revision Sheet
-  const rev = pack.revisionSheet;
-  if (rev) {
-    sections.push(`### ⚡ Cheat Sheet`);
-    if (rev.keyFormulas && rev.keyFormulas.length > 0) {
-      sections.push(`**📐 Formulas:**\n${rev.keyFormulas.map((f) => `* \`${f}\``).join("\n")}\n`);
-    }
-    if (rev.keyDates && rev.keyDates.length > 0) {
-      sections.push(`**📅 Dates:**\n${rev.keyDates.map((d) => `* ${d}`).join("\n")}\n`);
-    }
-    if (rev.keyTerms && rev.keyTerms.length > 0) {
-      sections.push(`**🗝️ Terms:**\n${rev.keyTerms.map((t) => `* ${t}`).join("\n")}\n`);
-    }
-    if (rev.mnemonics && rev.mnemonics.length > 0) {
-      sections.push(`**🧠 Memory Hacks:**\n${rev.mnemonics.map((m) => `* ${m}`).join("\n")}\n`);
-    }
-  }
-
-  // Key Takeaways
-  if (pack.keyTakeaways.length > 0) {
-    sections.push(`### 🚀 In a Nutshell`);
-    sections.push(pack.keyTakeaways.map((t) => `* ${t}`).join("\n"));
-  }
-
-  // Terminology
-  if (pack.terminology.length > 0) {
-    sections.push(`### 🗣️ Vocabulary`);
-    sections.push(pack.terminology.map((t) => `* **${t.term}**: ${t.definition}`).join("\n"));
-  }
-
-  // Section 7: Practice Questions
-  if (pack.selfAssessmentQuestions.length > 0) {
-    sections.push(`### 🧪 Practice Questions`);
-    const grouped = { easy: [] as string[], medium: [] as string[], hard: [] as string[] };
-    pack.selfAssessmentQuestions.forEach((q, i) => {
-      const diff = q.difficulty || "medium";
-      const label = diff === "easy" ? "🟢 Easy" : diff === "medium" ? "🟡 Medium" : "🔴 Hard";
-      grouped[diff].push(`${i + 1}. [${label}] ${q.question}\n   * **Answer:** ${q.answer}`);
-    });
-    for (const level of ["easy", "medium", "hard"] as const) {
-      if (grouped[level].length > 0) {
-        sections.push(grouped[level].join("\n"));
-      }
-    }
-  }
-
-  const summaryContent = sections.join("\n\n");
   const versionMarker = `[Version: ${LATEST_CONTENT_VERSION}]`;
   const baseDescription = `Comprehensive AI-generated notes with concepts, examples, misconceptions, and practice for ${topic.name}`;
   const versionedDescription = `${baseDescription} ${versionMarker}`;
@@ -318,7 +257,7 @@ export async function saveContentPack(topicId: string, pack: ContentPack) {
       title: `${topic.name} — NCERT Smart Notes`,
       description: versionedDescription,
       type: "PLATFORM_CONTENT",
-      content: summaryContent,
+      content: JSON.stringify(pack),
       subjectId: subject.id,
       chapterId: chapter.id,
       topicId,
@@ -329,70 +268,32 @@ export async function saveContentPack(topicId: string, pack: ContentPack) {
     update: {
       title: `${topic.name} — NCERT Smart Notes`,
       description: versionedDescription,
-      content: summaryContent,
+      content: JSON.stringify(pack),
       aiGeneratedAt: new Date(),
       isPublished: true,
     },
   });
 
-  // Save Verified YouTube Reference Links (Strict Verification)
+  // ── Phase 2: AI-Driven Video Curation ────────────────
+  const { curateVideosForTopic, saveCuratedVideos } = await import("./video-curator");
   let videosCreated = 0;
   
-  // Clear old AI videos for this topic to prevent accumulation of dead links/old search links
-  await prisma.studyMaterial.deleteMany({
-    where: {
-      topicId,
-      type: "VIDEO",
-      isAIGenerated: true
+  console.log(`[ContentCurator] Triggering Phase 2 Video Curation for ${topic.name}...`);
+  try {
+    const curatedVideos = await curateVideosForTopic(
+      topic.name, 
+      subject.grade, 
+      subject.name
+    );
+    
+    if (curatedVideos.length > 0) {
+      await saveCuratedVideos(topicId, curatedVideos);
+      videosCreated = curatedVideos.length;
+    } else {
+      console.warn(`[ContentCurator] Phase 2 Curation found no high-quality matches. Falling back to search link.`);
     }
-  });
-
-  if (pack.youtubeVideos && pack.youtubeVideos.length > 0) {
-    console.log(`[ContentCurator] Processing ${pack.youtubeVideos.length} YouTube candidates...`);
-    // We want to find up to 2 valid videos from the candidates
-    for (const v of pack.youtubeVideos) {
-      if (videosCreated >= 2) break; // We have enough valid videos
-      if (!v.videoId) continue;
-      
-      const videoUrl = `https://www.youtube.com/watch?v=${v.videoId}`;
-      console.log(`[ContentCurator] Verifying candidate: ${v.videoId} (${v.title})`);
-      
-      try {
-        const meta = await fetchYouTubeMeta(videoUrl);
-        
-        if (meta) {
-          console.log(`[ContentCurator] ✅ Verified: ${meta.title}`);
-          // Only save if verification succeeded
-          await prisma.studyMaterial.upsert({
-            where: { id: `ai-video-${topicId}-${v.videoId}` },
-            create: {
-              id: `ai-video-${topicId}-${v.videoId}`,
-              title: meta.title || v.title || `Video: ${topic.name}`,
-              description: `NCERT video lecture for ${topic.name} [Version: ${LATEST_CONTENT_VERSION}]`,
-              type: "VIDEO",
-              youtubeUrl: videoUrl,
-              thumbnailUrl: meta.thumbnailUrl,
-              subjectId: subject.id,
-              chapterId: chapter.id,
-              topicId,
-              isAIGenerated: true,
-              aiGeneratedAt: new Date(),
-              isPublished: true,
-            },
-            update: {
-              youtubeUrl: videoUrl,
-              thumbnailUrl: meta.thumbnailUrl,
-              aiGeneratedAt: new Date(),
-            }
-          });
-          videosCreated++;
-        } else {
-          console.log(`[ContentCurator] ❌ Verification FAILED for ${v.videoId}.`);
-        }
-      } catch (err) {
-        console.warn(`[ContentCurator] ⚠️ Error verifying video ${v.videoId}:`, err);
-      }
-    }
+  } catch (videoError) {
+    console.error(`[ContentCurator] Phase 2 Video Curation failed:`, videoError);
   }
   console.log(`[ContentCurator] Successfully seeded ${videosCreated} verified videos.`);
 
@@ -401,7 +302,7 @@ export async function saveContentPack(topicId: string, pack: ContentPack) {
     console.log(`[ContentCurator] ⚠️ No videos verified. Seeding a Search Fallback.`);
     const searchQuery = `${subject.name} ${topic.name} class ${subject.grade} NCERT`;
     const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}`;
-    
+
     await prisma.studyMaterial.upsert({
       where: { id: `ai-video-search-${topicId}` },
       create: {

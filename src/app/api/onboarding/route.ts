@@ -4,13 +4,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 const onboardingSchema = z.object({
-  grade: z.string().min(1, "Grade is required"),
-  board: z.string().min(1, "Board is required"),
-  hardestSubjects: z.array(z.string()).min(1, "Select at least one subject"),
-  targetScore: z.number().min(0).max(100),
-  studyTimePreference: z.string().min(1, "Select a study time preference"),
-  // Location fields for leaderboard scoping
-  state: z.string().min(1, "State is required").max(100),
+  grade: z.string().min(1).default("9"),
+  board: z.string().min(1).default("CBSE"),
+  hardestSubjects: z.array(z.string()).default([]),
+  targetScore: z.number().min(0).max(100).default(75),
+  studyTimePreference: z.string().default("Evening (6 PM - 9 PM)"),
+  state: z.string().max(100).default(""),
   district: z.string().max(100).optional(),
   school: z.string().max(200).optional(),
 });

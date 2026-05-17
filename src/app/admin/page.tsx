@@ -1,9 +1,12 @@
+import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, BookOpen, FileText, Activity } from "lucide-react";
+import { Users, BookOpen, FileText } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { connection } from "next/server";
+import { redirect } from "next/navigation";
+import { DistributionChart } from "./dashboard/distribution-chart";
 
 async function getAdminStats() {
   const [studentCount, subjectCount, chapterCount, topicCount, materialCount] = await Promise.all([
@@ -23,6 +26,14 @@ async function getAdminStats() {
 
 export default async function AdminDashboardPage() {
   await connection();
+  const session = await auth();
+
+  // Admin guard — allow both ADMIN and SUPER_ADMIN
+  const role = (session?.user as any)?.role;
+  if (!session?.user?.id || (role !== "ADMIN" && role !== "SUPER_ADMIN")) {
+    redirect("/dashboard");
+  }
+
   const stats = await getAdminStats();
 
   return (
@@ -38,7 +49,7 @@ export default async function AdminDashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Students</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
+            <Users className="h-4 w-4 text-purple-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.studentCount}</div>
@@ -49,7 +60,7 @@ export default async function AdminDashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Curriculum Nodes</CardTitle>
-            <BookOpen className="h-4 w-4 text-muted-foreground" />
+            <BookOpen className="h-4 w-4 text-indigo-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.curriculumNodes}</div>
@@ -60,7 +71,7 @@ export default async function AdminDashboardPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Study Materials</CardTitle>
-            <FileText className="h-4 w-4 text-muted-foreground" />
+            <FileText className="h-4 w-4 text-sky-500" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.materialCount}</div>
@@ -70,6 +81,8 @@ export default async function AdminDashboardPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
+        <DistributionChart />
+        
         <Card>
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
@@ -77,14 +90,14 @@ export default async function AdminDashboardPage() {
           </CardHeader>
           <CardContent className="grid gap-2">
             <Link href="/admin/curriculum">
-              <Button variant="outline" className="w-full justify-start gap-2">
-                <BookOpen className="h-4 w-4 text-primary" />
+              <Button variant="outline" className="w-full justify-start gap-2 hover:bg-indigo-50/50">
+                <BookOpen className="h-4 w-4 text-indigo-500" />
                 Manage Curriculum Tree
               </Button>
             </Link>
             <Link href="/admin/content">
-              <Button variant="outline" className="w-full justify-start gap-2">
-                <FileText className="h-4 w-4 text-primary" />
+              <Button variant="outline" className="w-full justify-start gap-2 hover:bg-sky-50/50">
+                <FileText className="h-4 w-4 text-sky-500" />
                 Upload Study Materials
               </Button>
             </Link>

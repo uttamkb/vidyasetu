@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { generateAssignment } from "./assignment-generator";
+import { generateAssignment, generateAssignmentAIContent } from "./assignment-generator";
 import { prisma } from "@/lib/db";
-import { callGemini } from "@/lib/gemini";
+import { callGemini, callGeminiStrict } from "@/lib/gemini";
 import { DifficultyLevel, AssignmentType } from "@prisma/client";
 
 // Mock dependencies
@@ -16,9 +16,15 @@ vi.mock("@/lib/db", () => ({
     question: {
       findMany: vi.fn(),
       create: vi.fn(),
+      createManyAndReturn: vi.fn(),
     },
     assignment: {
       create: vi.fn(),
+      update: vi.fn(),
+      findUniqueOrThrow: vi.fn(),
+    },
+    schoolExamPattern: {
+      findUnique: vi.fn(),
     },
     user: {
       findUniqueOrThrow: vi.fn(),
@@ -31,6 +37,7 @@ vi.mock("@/lib/db", () => ({
 vi.mock("@/lib/gemini", () => ({
   geminiFlashModels: [],
   callGemini: vi.fn(),
+  callGeminiStrict: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma-json", () => ({
@@ -39,6 +46,16 @@ vi.mock("@/lib/prisma-json", () => ({
 
 vi.mock("@/prompts/question-generation", () => ({
   buildQuestionGenerationPrompt: vi.fn(() => "mock-prompt"),
+}));
+
+vi.mock("@/lib/cache", () => ({
+  withCache: vi.fn(async (key, deps, fn) => {
+    return { value: await fn(), fromCache: false };
+  }),
+}));
+
+vi.mock("@/services/usage-tracker", () => ({
+  trackCacheHit: vi.fn(async () => {}),
 }));
 
 describe("assignment-generator", () => {
@@ -131,5 +148,127 @@ describe("assignment-generator", () => {
     });
 
     await expect(generateAssignment({ ...mockInput, type: "FULL_SYLLABUS", chapterId: undefined })).rejects.toThrow("No subtopics found for the given scope.");
+  });
+
+  it("incorporates school-specific patterns if student is linked to a school", async () => {
+    (prisma.subject.findUniqueOrThrow as any).mockResolvedValue(mockSubject);
+    (prisma.user.findUniqueOrThrow as any).mockResolvedValue({
+      id: "user-1",
+      schoolId: "school-123",
+      grade: "9",
+      board: "CBSE"
+    });
+    (prisma.userMastery.findMany as any).mockResolvedValue([]);
+    (prisma.question.findMany as any).mockResolvedValue([]);
+    (prisma.assignment.create as any).mockResolvedValue({ id: "asgn-1" });
+
+    const mockPattern = {
+      examType: "UNIT_TEST",
+      blueprint: { totalMarks: 40 },
+      aiPromptContext: "Highly conceptual"
+    };
+    (prisma.schoolExamPattern.findUnique as any).mockResolvedValue(mockPattern);
+
+    const result = await generateAssignment(mockInput);
+
+    expect(prisma.schoolExamPattern.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        schoolId_grade_subjectId_examType: {
+          schoolId: "school-123",
+          grade: "9",
+          subjectId: "sub-1",
+          examType: "UNIT_TEST"
+        }
+      }
+    }));
+    expect(result.aiPromptContext).toBe("Highly conceptual");
+    expect(result.blueprint).toEqual({ totalMarks: 40 });
+  });
+});
+
+describe("generateAssignmentAIContent", () => {
+  const mockContext = {
+    subjectName: "Math",
+    grade: "9",
+    chapterName: "Algebra",
+    subtopics: "Linear Equations",
+    difficulty: "MEDIUM" as DifficultyLevel,
+    subtopicId: "st-1",
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("saves AI generated questions to the assignment", async () => {
+    // Mock the assignment fetch
+    (prisma.assignment.findUniqueOrThrow as any).mockResolvedValue({
+      id: "asgn-1",
+      questions: [],
+      maxMarks: 0,
+    });
+
+    // Mock AI response passing through callGemini
+    const mockAIResponse = {
+      title: "Test Assignment",
+      questions: [
+        {
+          type: "MCQ",
+          bloomLevel: "REMEMBER",
+          difficulty: 3,
+          content: { 
+            question: "What is a valid length question for testing?", 
+            options: ["A", "B", "C", "D"], 
+            correctAnswer: "A", 
+            explanation: "This is a valid length explanation.", 
+            maxMarks: 5 
+          },
+        }
+      ]
+    };
+    (callGeminiStrict as any).mockResolvedValue(mockAIResponse);
+
+    // Mock DB question creation
+    (prisma.question.createManyAndReturn as any).mockResolvedValue([
+      { id: "q-1", content: mockAIResponse.questions[0].content }
+    ]);
+    (prisma.assignment.update as any).mockResolvedValue({});
+
+    const result = await generateAssignmentAIContent("asgn-1", "user-1", 1, mockContext);
+
+    expect(result.success).toBe(true);
+    expect(prisma.question.createManyAndReturn).toHaveBeenCalled();
+    expect(prisma.assignment.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: "asgn-1" },
+      data: expect.objectContaining({ status: "READY" }),
+    }));
+  });
+
+  it("falls back to question bank if AI generation fails", async () => {
+    (prisma.assignment.findUniqueOrThrow as any).mockResolvedValue({
+      id: "asgn-1",
+      questions: [],
+      maxMarks: 0,
+    });
+
+    // Force AI failure
+    (callGeminiStrict as any).mockRejectedValue(new Error("AI Overloaded"));
+
+    // Mock Bank fallback
+    (prisma.question.findMany as any).mockResolvedValue([
+      { id: "bank-q1", content: { maxMarks: 5 } }
+    ]);
+    (prisma.assignment.update as any).mockResolvedValue({});
+
+    const result = await generateAssignmentAIContent("asgn-1", "user-1", 1, mockContext);
+
+    expect(result.success).toBe(true);
+    expect(result.fallbackUsed).toBe(true);
+    expect(prisma.question.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ verifiedByHuman: true }),
+    }));
+    expect(prisma.assignment.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: "READY" }),
+    }));
   });
 });

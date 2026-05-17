@@ -1,9 +1,11 @@
 import { prisma } from "@/lib/db";
-import { geminiFlashModels, callGemini } from "@/lib/gemini";
+import { callGemini, callGeminiStrict } from "@/lib/gemini";
 import { toJson } from "@/lib/prisma-json";
 import { AssignmentType, BloomLevel, DifficultyLevel, QuestionType } from "@prisma/client";
 import { buildQuestionGenerationPrompt, type QuestionGenerationContext } from "@/prompts/question-generation";
 import { AIAssignmentOutputSchema, type AIQuestion } from "@/types/ai-schemas";
+import { withCache } from "@/lib/cache";
+import { trackCacheHit } from "@/services/usage-tracker";
 
 const DIFFICULTY_MAP: Record<DifficultyLevel, number[]> = {
   EASY: [1, 2],
@@ -44,7 +46,7 @@ export async function generateAssignment({
   // 1b. Fetch User location
   const user = await prisma.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { state: true, district: true, school: true },
+    select: { state: true, district: true, school: true, schoolId: true },
   });
 
   // 2. Identify target subtopics based on scope (CHAPTER vs FULL)
@@ -101,6 +103,18 @@ export async function generateAssignment({
     return sum + (content.maxMarks ?? 5);
   }, 0);
 
+  // 7b. Check for School Exam Pattern (Blueprint & Stylistic Context)
+  const schoolPattern = user.schoolId ? await prisma.schoolExamPattern.findUnique({
+    where: {
+      schoolId_grade_subjectId_examType: {
+        schoolId: user.schoolId,
+        grade: subject.grade,
+        subjectId,
+        examType: type === "SEMESTER" ? "HALF_YEARLY" : "UNIT_TEST", // Logic to map assignment type to exam pattern
+      }
+    }
+  }) : null;
+
   // 8. Create Assignment record (as GENERATING)
   const chapterForTitle = chapterId
     ? subject.chapters.find((c) => c.id === chapterId)?.name
@@ -123,12 +137,31 @@ export async function generateAssignment({
       authorId: userId,
       targetGrade: subject.grade,
       targetBoard: subject.board,
+      schoolId: user.schoolId,
+      examType: schoolPattern?.examType ?? null,
     },
     include: {
       subject: true,
       chapter: true,
     },
   });
+
+  // Increment user activity counter (fire-and-forget, don't block on failure)
+  // Wrapped in async IIFE to handle both real DB and mocked tests gracefully
+  (async () => {
+    try {
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          totalAssignmentsGenerated: { increment: 1 },
+          lastActiveAt: new Date(),
+        },
+      });
+    } catch (err) {
+      // Silently fail — counter is best-effort, not critical path
+      console.error("[assignment-generator] Failed to update user counters:", err);
+    }
+  })();
 
   return { 
     assignment, 
@@ -140,7 +173,9 @@ export async function generateAssignment({
       district: user.district,
       school: user.school,
     },
-    mainSubtopicId: weightedSubtopics[0]?.id || allSubtopics[0]?.id
+    mainSubtopicId: weightedSubtopics[0]?.id || allSubtopics[0]?.id,
+    aiPromptContext: schoolPattern?.aiPromptContext,
+    blueprint: schoolPattern?.blueprint
   };
 }
 
@@ -161,6 +196,8 @@ export async function generateAssignmentAIContent(
     district?: string | null;
     schoolName?: string | null;
     subtopicId: string;
+    aiPromptContext?: string | null;
+    blueprint?: any;
   }
 ) {
   try {
@@ -174,7 +211,11 @@ export async function generateAssignmentAIContent(
       state: context.state,
       district: context.district,
       schoolName: context.schoolName,
-    });
+      aiPromptContext: context.aiPromptContext,
+      blueprint: context.blueprint,
+    }, userId);
+
+    console.log(`[generateAssignmentAIContent] AI generated ${generated.length} questions for assignment ${assignmentId}`);
 
     const assignment = await prisma.assignment.findUniqueOrThrow({
       where: { id: assignmentId }
@@ -193,6 +234,8 @@ export async function generateAssignmentAIContent(
       })),
     });
     
+    console.log(`[generateAssignmentAIContent] Saved ${savedQuestions.length} questions to DB`);
+
     // Update assignment
     const newList = [...existingList];
     let addedMarks = 0;
@@ -211,30 +254,89 @@ export async function generateAssignmentAIContent(
       }
     });
 
+    console.log(`[generateAssignmentAIContent] Assignment ${assignmentId} updated to READY with ${newList.length} total questions`);
     return { success: true };
-  } catch (error) {
-    console.error("[generateAssignmentAIContent] failed:", error);
+  } catch (error: any) {
+    console.error(`[generateAssignmentAIContent] Fatal error for assignment ${assignmentId}:`, error);
+
+    // EMERGENCY FALLBACK: If AI failed, try to pick SOME questions from the bank so the assignment isn't empty
+    try {
+      console.log(`[generateAssignmentAIContent] Attempting bank fallback for ${assignmentId}`);
+      const bankQuestions = await prisma.question.findMany({
+        where: {
+          subtopicId: context.subtopicId,
+          verifiedByHuman: true,
+        },
+        take: aiQCount,
+      });
+
+      if (bankQuestions.length > 0) {
+        const assignment = await prisma.assignment.findUniqueOrThrow({ where: { id: assignmentId } });
+        const existingList = assignment.questions as any[];
+        const newList = [...existingList];
+        let addedMarks = 0;
+        
+        bankQuestions.forEach((q, i) => {
+          newList.push({ questionId: q.id, orderIndex: existingList.length + i });
+          const content = q.content as any;
+          addedMarks += (content.maxMarks ?? 5);
+        });
+
+        await prisma.assignment.update({
+          where: { id: assignmentId },
+          data: {
+            questions: toJson(newList),
+            maxMarks: assignment.maxMarks + addedMarks,
+            status: "READY"
+          }
+        });
+        console.log(`[generateAssignmentAIContent] Fallback successful. Added ${bankQuestions.length} bank questions.`);
+        return { success: true, fallbackUsed: true };
+      }
+    } catch (fallbackError) {
+      console.error("[generateAssignmentAIContent] Fallback also failed:", fallbackError);
+    }
+
+    // If fallback also failed or was empty, mark as FAILED
     await prisma.assignment.update({
       where: { id: assignmentId },
-      data: { status: "FAILED" }
-    });
+      data: { status: "FAILED" } 
+    }).catch(() => {});
+    
     throw error;
   }
 }
 
-async function generateQuestionsWithAI(input: QuestionGenerationContext) {
+async function generateQuestionsWithAI(input: QuestionGenerationContext, userId: string) {
   const prompt = buildQuestionGenerationPrompt(input);
-  const result = await callGemini(geminiFlashModels, prompt, {
-    userId: "system", // Usage tracking for generation
-    type: "ASSIGNMENT_GEN",
-  });
+  
+  // 1. Primary Attempt: Use FLASH for speed and cost-efficiency
+  let result = await callGeminiStrict<any>(
+    "FLASH",
+    prompt,
+    undefined,
+    { userId, type: "GENERATION" }
+  );
 
+  // 2. Resilience Check: If FLASH returned empty or suspicious results, retry with PRO
+  if (!result.questions || result.questions.length === 0) {
+    console.warn("[generateQuestionsWithAI] FLASH returned empty results. Retrying with PRO...");
+    result = await callGeminiStrict<any>(
+      "PRO",
+      prompt,
+      undefined,
+      { userId, type: "GENERATION" }
+    );
+  }
+
+  // 3. Validation
   const parsed = AIAssignmentOutputSchema.safeParse(result);
   if (!parsed.success) {
+    console.error("[generateQuestionsWithAI] Validation failed:", JSON.stringify(parsed.error.format(), null, 2));
     throw new Error("AI output failed validation.");
   }
 
-  return parsed.data;
+  return parsed.data.questions;
 }
 
 function buildTitle({ subjectName, type, difficulty, chapterName }: { subjectName: string; type: AssignmentType; difficulty: DifficultyLevel; chapterName: string | null | undefined }) {

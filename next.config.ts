@@ -9,10 +9,12 @@ const nextConfig: NextConfig = {
     "@prisma/client",
     "@neondatabase/serverless",
     "@prisma/adapter-neon",
+    "@upstash/redis",
   ],
-  reactCompiler: true,
+  // Next.js 15+ features
+  typedRoutes: true,
   experimental: {
-    // Other experimental features if needed
+    optimizePackageImports: ["lucide-react", "recharts", "date-fns"],
   },
 };
 

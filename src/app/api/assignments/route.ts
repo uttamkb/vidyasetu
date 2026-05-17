@@ -46,25 +46,34 @@ export async function GET(req: NextRequest) {
 
     const enriched = assignments
       .filter((a) => a.title !== "Mathematics Number Systems Test — Hard")
-      .map((a) => ({
-      id: a.id,
-      title: a.title,
-      type: a.type,
-      difficulty: a.difficulty,
-      maxMarks: a.maxMarks,
-      timeLimit: a.timeLimit,
-      isAIGenerated: a.isAIGenerated,
-      subject: a.subject,
-      chapter: a.chapter,
-      questionCount: Array.isArray(a.questions) ? (a.questions as unknown[]).length : 0,
-      dueDate: a.dueDate,
-      createdAt: a.createdAt,
-      // Student's submission status
-      submission: a.submissions[0] ?? null,
-      status: a.submissions[0]
-        ? a.submissions[0].status
-        : "NOT_STARTED",
-    }));
+      .map((a) => {
+        // 5-minute stale check for AI generation
+        const isStale = a.status === "GENERATING" && 
+                       (new Date().getTime() - new Date(a.createdAt).getTime()) > 5 * 60 * 1000;
+        
+        const currentStatus = isStale ? "FAILED" : a.status;
+
+        return {
+          id: a.id,
+          title: a.title,
+          type: a.type,
+          difficulty: a.difficulty,
+          maxMarks: a.maxMarks,
+          timeLimit: a.timeLimit,
+          isAIGenerated: a.isAIGenerated,
+          assignmentStatus: currentStatus, // Internal AI status
+          subject: a.subject,
+          chapter: a.chapter,
+          questionCount: Array.isArray(a.questions) ? (a.questions as unknown[]).length : 0,
+          dueDate: a.dueDate,
+          createdAt: a.createdAt,
+          // Student's submission status
+          submission: a.submissions[0] ?? null,
+          status: a.submissions[0]
+            ? a.submissions[0].status
+            : "NOT_STARTED",
+        };
+      });
 
     return NextResponse.json({ assignments: enriched });
   } catch (err) {

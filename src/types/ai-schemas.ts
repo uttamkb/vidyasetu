@@ -23,7 +23,7 @@ export const AIQuestionContentSchema = z.object({
 });
 
 export const AIQuestionSchema = z.object({
-  type: z.enum(["MCQ", "SHORT_ANSWER", "NUMERIC"]),
+  type: z.enum(["MCQ", "SHORT_ANSWER", "LONG_ANSWER", "NUMERIC", "MATCHING"]),
   bloomLevel: z.enum(["REMEMBER", "UNDERSTAND", "APPLY", "ANALYZE"]),
   difficulty: z.number().int().min(1).max(5),
   examWeightage: z.string().optional(),
@@ -32,7 +32,10 @@ export const AIQuestionSchema = z.object({
   content: AIQuestionContentSchema,
 });
 
-export const AIAssignmentOutputSchema = z.array(AIQuestionSchema).min(1);
+export const AIAssignmentOutputSchema = z.object({
+  title: z.string().optional(),
+  questions: z.array(AIQuestionSchema).min(1),
+});
 
 export type AIQuestion = z.infer<typeof AIQuestionSchema>;
 export type AIAssignmentOutput = z.infer<typeof AIAssignmentOutputSchema>;
@@ -113,3 +116,32 @@ export const AIRecommendationsOutputSchema = z.object({
 });
 
 export type AIRecommendationsOutput = z.infer<typeof AIRecommendationsOutputSchema>;
+
+// ─────────────────────────────────────────────────────────────
+// Content Ingestion (Admin)
+// ─────────────────────────────────────────────────────────────
+
+export const AIExamBlueprintSchema = z.object({
+  totalMarks: z.number().int(),
+  sections: z.array(z.object({
+    name: z.string(),
+    type: z.string(),
+    count: z.number().int(),
+    marksPerQuestion: z.number().int(),
+  })),
+  stylisticContext: z.string().describe("Overall pattern, difficulty curve, and stylistic nuances of the exam"),
+});
+
+export const AIDocumentExtractionSchema = z.object({
+  blueprint: AIExamBlueprintSchema,
+  questions: z.array(z.object({
+    type: z.enum(["MCQ", "SHORT_ANSWER", "LONG_ANSWER", "NUMERIC", "MATCHING"]),
+    content: AIQuestionContentSchema,
+    difficulty: z.number().int().min(1).max(5),
+    bloomLevel: z.enum(["REMEMBER", "UNDERSTAND", "APPLY", "ANALYZE"]),
+    suggestedSubtopicName: z.string().describe("The name of the subtopic this question belongs to"),
+  })),
+});
+
+export type AIDocumentExtraction = z.infer<typeof AIDocumentExtractionSchema>;
+export type AIExamBlueprint = z.infer<typeof AIExamBlueprintSchema>;

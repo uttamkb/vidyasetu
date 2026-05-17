@@ -3,6 +3,31 @@ import { prisma } from "@/lib/db";
 import { CurriculumResearcher } from "@/services/curriculum-researcher";
 import { generateTopicContentPack, saveContentPack, isContentOutdated, LATEST_CONTENT_VERSION } from "@/services/content-curator";
 
+// 0. Cron Job: Daily Subscription Expiry Check
+// Marks subscriptions as EXPIRED when past their expiry date
+export const dailySubscriptionExpiry = inngest.createFunction(
+  { id: "daily-subscription-expiry", concurrency: 1 },
+  { cron: "0 6 * * *" }, // Run daily at 6 AM
+  async ({ step }) => {
+    const expired = await step.run("mark-expired-subscriptions", async () => {
+      const result = await prisma.user.updateMany({
+        where: {
+          subscriptionStatus: "ACTIVE",
+          subscriptionExpiresAt: { lt: new Date() },
+        },
+        data: {
+          subscriptionStatus: "EXPIRED",
+          subscriptionPlan: "FREE",
+        },
+      });
+      return result.count;
+    });
+
+    console.log(`[Inngest] Daily expiry check: ${expired} subscriptions marked as EXPIRED`);
+    return { expired };
+  }
+);
+
 // 1. Cron Job: Monthly Seeder Scan
 // Scans for empty subjects and topics, then dispatches individual seed events
 export const monthlySeeder = inngest.createFunction(
@@ -127,5 +152,163 @@ export const seedTopicContent = inngest.createFunction(
     });
 
     return { topicId, result };
+  }
+);
+
+// 4. Cron Job: Curation Engine (The Brain)
+// Performs redundancy pruning and 3-month archival cleanup
+export const curationEngine = inngest.createFunction(
+  { id: "curation-engine", concurrency: 1 },
+  { cron: "0 0 * * 0" }, // Every Sunday at midnight
+  async ({ step }) => {
+    await step.run("run-curation-cycle", async () => {
+      const { runCurationCycle } = await import("@/services/curation-engine");
+      await runCurationCycle();
+    });
+    return { success: true };
+  }
+);
+
+// 5. Cron Job: Stale Generating Assignment Cleanup
+// Cleans up assignments stuck in 'GENERATING' status for more than 15 minutes
+export const cleanStaleGeneratingAssignments = inngest.createFunction(
+  { id: "clean-stale-generating-assignments", concurrency: 1 },
+  { cron: "*/15 * * * *" }, // Run every 15 minutes
+  async ({ step }) => {
+    const cleaned = await step.run("mark-stale-assignments-failed", async () => {
+      const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+      
+      const staleAssignments = await prisma.assignment.findMany({
+        where: {
+          status: "GENERATING",
+          createdAt: { lt: fifteenMinutesAgo },
+        },
+        select: { id: true }
+      });
+
+      if (staleAssignments.length === 0) return 0;
+
+      const ids = staleAssignments.map((a) => a.id);
+
+      const result = await prisma.assignment.updateMany({
+        where: {
+          id: { in: ids }
+        },
+        data: {
+          status: "FAILED"
+        }
+      });
+
+      return result.count;
+    });
+
+    console.log(`[Inngest] Stale Generating Assignment Cleanup: Marked ${cleaned} assignments as FAILED`);
+    return { cleaned };
+  }
+);
+
+// 6. Cron Job: Self-Learning Question Bank Auto-Promotion
+// Auto-promotes high-performing AI questions to the verified master question bank
+export const autoPromoteAIQuestionsJob = inngest.createFunction(
+  { id: "auto-promote-ai-questions", concurrency: 1 },
+  { cron: "0 2 * * *" }, // Run every day at 2 AM
+  async ({ step }) => {
+    const promotedCount = await step.run("promote-questions", async () => {
+      const { promoteHighPerformingQuestions } = await import("@/services/self-learning-service");
+      return await promoteHighPerformingQuestions();
+    });
+    return { success: true, promotedCount };
+  }
+);
+
+// 7. Cron Job: Retry DLQ'd Failed Evaluations
+// Finds EVALUATION_FAILED tasks, re-dispatches evaluation events, then marks them RETRIED
+export const retryFailedEvaluationsJob = inngest.createFunction(
+  { id: "retry-failed-evaluations", concurrency: 1 },
+  { cron: "0 3 * * *" }, // Run every day at 3 AM
+  async ({ step }) => {
+    const retried = await step.run("find-and-retry-dlq-tasks", async () => {
+      const failedTasks = await prisma.task.findMany({
+        where: {
+          type: "EVALUATION_FAILED",
+          status: "FAILED",
+        },
+        take: 50, // Cap at 50 per run to avoid queue flooding
+        orderBy: { createdAt: "asc" }, // Oldest first
+      });
+
+      if (failedTasks.length === 0) return 0;
+
+      const events = [];
+      const taskIds = [];
+
+      for (const task of failedTasks) {
+        const payload = task.payload as any;
+        if (!payload?.submissionId) continue;
+
+        // Verify the submission still exists and is still IN_PROGRESS
+        const sub = await prisma.submission.findUnique({
+          where: { id: payload.submissionId },
+          select: { status: true, userId: true },
+        });
+
+        if (!sub || sub.status === "EVALUATED") {
+          // Already evaluated (student re-submitted manually) — mark task as resolved
+          taskIds.push(task.id);
+          continue;
+        }
+
+        // Re-dispatch evaluation event
+        events.push({
+          name: "app/submission.evaluate" as const,
+          data: {
+            submissionId: payload.submissionId,
+            userId: sub.userId,
+          },
+        });
+        taskIds.push(task.id);
+      }
+
+      // Dispatch all retry events
+      if (events.length > 0) {
+        await inngest.send(events);
+      }
+
+      // Mark all processed DLQ tasks as COMPLETED so they aren't retried again
+      if (taskIds.length > 0) {
+        await prisma.task.updateMany({
+          where: { id: { in: taskIds } },
+          data: { status: "COMPLETED" },
+        });
+      }
+
+      return events.length;
+    });
+
+    console.log(`[Inngest] DLQ Retry: Re-dispatched ${retried} failed evaluations`);
+    return { retried };
+  }
+);
+
+// 8. Cron Job: AIValidation Table Archival
+// Deletes self-learning feedback records older than 90 days to prevent table bloat.
+export const archiveOldAIValidationsJob = inngest.createFunction(
+  { id: "archive-old-ai-validations", concurrency: 1 },
+  { cron: "0 4 1 * *" }, // Run at 4 AM on the 1st of every month
+  async ({ step }) => {
+    const deleted = await step.run("delete-old-validations", async () => {
+      const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+      const result = await prisma.aIValidation.deleteMany({
+        where: {
+          createdAt: { lt: ninetyDaysAgo },
+        },
+      });
+
+      return result.count;
+    });
+
+    console.log(`[Inngest] AIValidation Archival: Deleted ${deleted} records older than 90 days`);
+    return { deleted };
   }
 );

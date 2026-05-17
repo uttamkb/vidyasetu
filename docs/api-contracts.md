@@ -255,6 +255,108 @@ Retrieve ranked student leaderboard.
 
 ## 🛠️ System & Admin
 
+### GET `/api/admin/users` [ADMIN ONLY]
+Paginated, filterable user list.
+
+**Query Parameters:**
+- `page`: Page number (default: 1)
+- `limit`: Items per page (default: 20)
+- `search`: Search by name/email
+- `plan`: Filter by subscription plan (FREE/PRO)
+- `status`: Filter by subscription status (ACTIVE/EXPIRED)
+
+**Response:**
+```json
+{
+  "users": [
+    {
+      "id": "uuid",
+      "name": "Aditya Singh",
+      "email": "aditya@example.com",
+      "role": "STUDENT",
+      "subscriptionPlan": "FREE",
+      "subscriptionStatus": "ACTIVE",
+      "totalAssignmentsGenerated": 12,
+      "totalSubmissions": 45,
+      "lastActiveAt": "2026-05-14T10:00:00Z"
+    }
+  ],
+  "total": 150,
+  "page": 1,
+  "limit": 20
+}
+```
+
+### GET `/api/admin/users/:id` [ADMIN ONLY]
+Single user detail + activity timeline.
+
+**Response:**
+```json
+{
+  "user": {
+    "id": "uuid",
+    "name": "Aditya Singh",
+    "email": "aditya@example.com",
+    "role": "STUDENT",
+    "subscriptionPlan": "FREE",
+    "subscriptionStatus": "ACTIVE",
+    "subscriptionExpiresAt": null,
+    "isActive": true
+  },
+  "stats": {
+    "totalAssignmentsGenerated": 12,
+    "totalSubmissions": 45,
+    "totalAICalls": 120
+  }
+}
+```
+
+### PATCH `/api/admin/users/:id` [ADMIN ONLY]
+Edit user state. Role changes require SUPER_ADMIN.
+
+**Request Body:**
+```json
+{
+  "subscriptionPlan": "PRO",
+  "subscriptionStatus": "ACTIVE",
+  "isActive": true
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "user": { "id": "uuid", "subscriptionPlan": "PRO" }
+}
+```
+
+### GET `/api/admin/health-check` [ADMIN ONLY]
+System diagnostics. Logs results to `SystemHealthCheck` table.
+
+**Response:**
+```json
+{
+  "database": { "status": "HEALTHY", "latencyMs": 15 },
+  "gemini": { "status": "HEALTHY", "latencyMs": 245 },
+  "inngest": { "status": "HEALTHY", "latencyMs": 5 },
+  "timestamp": "2026-05-14T10:00:00Z"
+}
+```
+
+### PATCH `/api/admin/feature-gates` [SUPER_ADMIN ONLY]
+Toggle platform features.
+
+**Request Body:**
+```json
+{
+  "name": "contentCaching",
+  "state": "ON"
+}
+```
+
+**States:** `OFF` | `SHADOW` | `ON`
+
 ### GET `/api/admin/usage` [ADMIN ONLY]
 Returns daily AI usage metrics across all users and models.
 
@@ -277,4 +379,52 @@ Returns daily AI usage metrics across all users and models.
 Manually trigger curriculum or badge seeding. Supports Inngest background workers.
 
 ### GET `/api/health` [PUBLIC]
-Returns system health, database connectivity, and Inngest client status.
+Returns system health, database connectivity, and AI readiness.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2026-05-14T10:00:00Z",
+  "services": {
+    "database": "connected",
+    "ai": "ready"
+  }
+}
+```
+
+---
+
+## 💳 Subscription
+
+### How Enforcement Works
+
+Every AI feature call checks subscription status:
+
+1. **Assignment Generation** → `POST /api/assignments/generate`
+   - Checks `requireSubscription(userId, "ASSIGNMENT_GENERATION")`
+   - FREE: 3/day, 10/month
+   - PRO: 50/day, 500/month
+
+2. **Evaluation** → `POST /api/submissions`
+   - Checks `requireSubscription(userId, "EVALUATION")`
+   - FREE: 10/day
+   - PRO: 100/day
+
+**Blocked Response (403):**
+```json
+{
+  "error": "Daily limit reached (3 ASSIGNMENT_GENERATION per day)",
+  "code": "DAILY_LIMIT_REACHED"
+}
+```
+
+**Shadow Mode:** Set `FEATURE_GATES_ENABLED=shadow` to log violations without blocking.
+
+### Profile Subscription Card
+
+`GET /profile` shows:
+- Plan badge (FREE/PRO)
+- Status (ACTIVE/EXPIRED)
+- Usage limits
+- Upgrade prompt for FREE users

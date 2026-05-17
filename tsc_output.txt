@@ -1,0 +1,14 @@
+src/app/admin/dashboard/distribution-chart.tsx(92,17): error TS2322: Type '(value: number, name: string) => [string, string]' is not assignable to type 'Formatter<ValueType, NameType> & ((value: ValueType, name: NameType, item: TooltipPayloadEntry, index: number, payload: TooltipPayload) => ReactNode | [...])'.
+  Type '(value: number, name: string) => [string, string]' is not assignable to type 'Formatter<ValueType, NameType>'.
+    Types of parameters 'value' and 'value' are incompatible.
+      Type 'ValueType | undefined' is not assignable to type 'number'.
+        Type 'undefined' is not assignable to type 'number'.
+src/services/admin-analytics.ts(17,33): error TS2322: Type '{ subtopic?: { chapter: { subject: { grade: string; }; }; } | { chapter: { subjectId: string; }; } | undefined; }' is not assignable to type 'QuestionWhereInput'.
+  Types of property 'subtopic' are incompatible.
+    Type '{ chapter: { subject: { grade: string; }; }; } | { chapter: { subjectId: string; }; } | undefined' is not assignable to type '(Without<SubtopicScalarRelationFilter, SubtopicWhereInput> & SubtopicWhereInput) | (Without<...> & SubtopicScalarRelationFilter) | undefined'.
+      Object literal may only specify known properties, and 'chapter' does not exist in type '(Without<SubtopicScalarRelationFilter, SubtopicWhereInput> & SubtopicWhereInput) | (Without<...> & SubtopicScalarRelationFilter)'.
+src/services/self-learning-loop.test.ts(27,13): error TS2551: Property 'aiValidation' does not exist on type 'PrismaClient<PrismaClientOptions, never, DefaultArgs>'. Did you mean 'aIValidation'?
+src/services/self-learning-loop.test.ts(57,13): error TS2551: Property 'aiValidation' does not exist on type 'PrismaClient<PrismaClientOptions, never, DefaultArgs>'. Did you mean 'aIValidation'?
+src/services/self-learning-service.ts(25,7): error TS2322: Type 'InputJsonValue | null' is not assignable to type 'InputJsonValue | NullableJsonNullValueInput | undefined'.
+  Type 'null' is not assignable to type 'InputJsonValue | NullableJsonNullValueInput | undefined'.
+src/services/self-learning-service.ts(43,26): error TS2322: Type 'null' is not assignable to type 'InputJsonValue | JsonNullValueFilter | FieldRef<"AIValidation", "Json"> | undefined'.

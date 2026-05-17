@@ -7,9 +7,10 @@ import { generateAssignmentAIContent } from "@/services/assignment-generator";
 export const generateAssignmentJob = inngest.createFunction(
   { 
     id: "generate-assignment",
-    // Concurrency limit to prevent hitting Gemini Flash rate limits
+    // Concurrency limit to prevent hitting Gemini Flash rate limits per user
     concurrency: {
-      limit: 20,
+      limit: 5,
+      key: "event.data.userId",
     },
     retries: 2,
   },

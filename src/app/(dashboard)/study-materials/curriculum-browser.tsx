@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,9 @@ import {
   X,
 } from "lucide-react";
 import { extractYouTubeId, youTubeThumbnailUrl } from "@/lib/youtube";
+import { MathRenderer } from "@/components/math-renderer";
+import { PremiumNotesRenderer } from "./premium-notes-renderer";
+import type { ContentPack } from "@/services/content-curator";
 
 // ─────────────────────────────────────────
 // Types
@@ -235,6 +239,27 @@ function MaterialCard({ material, onReadInline, onWatchVideo }: {
   );
 }
 
+// Helper: detect JSON pack vs legacy markdown
+function NotesContent({ content }: { content: string }) {
+  let pack: ContentPack | null = null;
+  try {
+    const trimmed = content.trim();
+    if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+      const parsed = JSON.parse(trimmed);
+      if (parsed.coreConcepts && Array.isArray(parsed.coreConcepts)) {
+        pack = parsed as ContentPack;
+      }
+    }
+  } catch {
+    // falls through
+  }
+
+  if (pack) {
+    return <PremiumNotesRenderer pack={pack} />;
+  }
+  return <SimpleMarkdown content={content} />;
+}
+
 // ─────────────────────────────────────────
 // Simple Markdown Renderer (Internal)
 // ─────────────────────────────────────────
@@ -278,36 +303,149 @@ function SimpleMarkdown({ content }: { content: string }) {
           </div>
         );
       } else {
-        rendered.push(<p key={i} className="mb-4 text-[#1d1d1f]/90 dark:text-slate-200 text-base leading-relaxed font-medium print:break-inside-avoid">{line}</p>);
+        rendered.push(<MathRenderer key={i} content={line} className="mb-4 text-[#1d1d1f]/90 dark:text-slate-200 text-base leading-relaxed font-medium print:break-inside-avoid" />);
       }
     } else if (line.startsWith("* ") || line.startsWith("- ")) {
       rendered.push(
         <li 
           key={i} 
           className="ml-6 mb-3 list-disc text-[#1d1d1f]/90 dark:text-slate-200 text-base leading-relaxed font-medium marker:text-primary print:break-inside-avoid print:marker:text-black/50"
-          dangerouslySetInnerHTML={{ __html: formatText(line.replace(/^[* -] /, "")) }}
-        />
+        >
+          <MathRenderer content={line.replace(/^[* -] /, "")} />
+        </li>
       );
     } else if (/^\d+\./.test(line)) {
       rendered.push(
-        <p 
+        <div 
           key={i} 
           className="ml-2 mb-4 text-[#1d1d1f]/90 dark:text-slate-200 text-base leading-relaxed font-medium print:break-inside-avoid"
-          dangerouslySetInnerHTML={{ __html: formatText(line) }}
-        />
+        >
+          <MathRenderer content={line} />
+        </div>
       );
     } else {
       rendered.push(
-        <p 
+        <div 
           key={i} 
           className="mb-4 text-[#1d1d1f]/90 dark:text-slate-200 text-base leading-relaxed font-medium print:break-inside-avoid"
-          dangerouslySetInnerHTML={{ __html: formatText(line) }}
-        />
+        >
+          <MathRenderer content={line} />
+        </div>
       );
     }
   }
 
   return <div className="academic-notes">{rendered}</div>;
+}
+
+// ─────────────────────────────────────────
+// AI Study Buddy Chat Sidebar
+// ─────────────────────────────────────────
+function StudyBuddyChat({ materialId }: { materialId: string }) {
+  const [message, setMessage] = useState("");
+  const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const handleSend = async () => {
+    if (!message.trim() || loading) return;
+
+    setLoading(true);
+    const userMsg = message;
+    setMessage("");
+    
+    // Optimistic update
+    setHistory(prev => [...prev, { role: "user", parts: [{ text: userMsg }] }]);
+
+    try {
+      const res = await fetch("/api/study-materials/tutor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ materialId, message: userMsg, history }),
+      });
+
+      const data = await res.json();
+      if (res.status === 403) {
+        // toast.error(data.error || "Quota exceeded");
+        setHistory(prev => [...prev, { role: "model", parts: [{ text: `⚠️ ${data.error || "Quota exceeded"}` }] }]);
+        return;
+      }
+      
+      if (data.text) {
+        setHistory(prev => [...prev, { role: "model", parts: [{ text: data.text }] }]);
+      }
+    } catch (err) {
+      // toast.error("Failed to connect to Study Buddy");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (!isExpanded) {
+    return (
+      <Button 
+        onClick={() => setIsExpanded(true)}
+        className="fixed bottom-10 right-10 rounded-full h-14 w-14 shadow-premium z-[60] bg-primary hover:scale-110 transition-transform animate-in fade-in zoom-in-50 duration-500 no-print"
+      >
+        <Sparkles className="h-6 w-6 text-primary-foreground" />
+      </Button>
+    );
+  }
+
+  return (
+    <Card className="fixed bottom-10 right-10 w-80 h-[500px] shadow-premium z-[60] flex flex-col overflow-hidden animate-in slide-in-from-right-4 duration-300 no-print border-primary/20">
+      <CardHeader className="p-3 bg-primary text-primary-foreground flex flex-row items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-4 w-4" />
+          <CardTitle className="text-sm font-bold">Study Buddy AI</CardTitle>
+        </div>
+        <Button variant="ghost" size="icon" className="h-6 w-6 text-primary-foreground hover:bg-white/20" onClick={() => setIsExpanded(false)}>
+          <X className="h-4 w-4" />
+        </Button>
+      </CardHeader>
+      
+      <ScrollArea className="flex-1 p-4 bg-muted/20">
+        <div className="space-y-4">
+          <div className="bg-primary/10 p-3 rounded-lg text-[11px] font-medium leading-relaxed">
+            👋 Hi! I&apos;m your Study Buddy. Ask me anything about these notes!
+          </div>
+          {history.map((msg, idx) => (
+            <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+              <div className={`max-w-[85%] p-2.5 rounded-2xl text-xs font-medium ${
+                msg.role === 'user' 
+                  ? 'bg-primary text-primary-foreground rounded-tr-none' 
+                  : 'bg-background border border-border/50 rounded-tl-none shadow-sm'
+              }`}>
+                <MathRenderer content={msg.parts[0].text} />
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="bg-background border border-border/50 rounded-2xl rounded-tl-none p-3 shadow-sm">
+                <Loader2 className="h-3 w-3 animate-spin text-primary" />
+              </div>
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+
+      <div className="p-3 border-t bg-background">
+        <div className="flex gap-2">
+          <Input 
+            placeholder="Ask a question..." 
+            value={message}
+            onChange={e => setMessage(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSend()}
+            className="h-9 text-xs"
+          />
+          <Button size="icon" className="h-9 w-9 shrink-0" onClick={handleSend} disabled={loading}>
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </Card>
+  );
 }
 
 // ─────────────────────────────────────────
@@ -319,56 +457,59 @@ function NotesReader({ material, onClose }: { material: StudyMaterial; onClose: 
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-start justify-center p-4 overflow-auto print:relative print:block print:overflow-visible print:bg-transparent print:backdrop-blur-none print:p-0">
-      <Card className="bg-[#fdfcf8] dark:bg-slate-950 border-slate-200/50 dark:border-slate-800 shadow-[0_8px_30px_rgb(0,0,0,0.08)] w-full max-w-3xl mt-8 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-300 overflow-hidden print:bg-white print:border-none print:shadow-none print:m-0 print:max-w-none print:overflow-visible">
-        <div className="sticky top-0 z-10 bg-[#fdfcf8]/90 dark:bg-slate-950/90 backdrop-blur-md px-6 py-4 border-b border-slate-200/50 dark:border-slate-800 flex items-center justify-between no-print">
-          <div className="flex items-center gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <BookMarked className="h-5 w-5 text-primary" />
+    <>
+      <StudyBuddyChat materialId={material.id} />
+      <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-start justify-center p-4 overflow-auto print:relative print:block print:overflow-visible print:bg-transparent print:backdrop-blur-none print:p-0">
+        <Card className="bg-[#fdfcf8] dark:bg-slate-950 border-slate-200/50 dark:border-slate-800 shadow-[0_8px_30px_rgb(0,0,0,0.08)] w-full max-w-3xl mt-8 mb-8 animate-in fade-in slide-in-from-bottom-4 duration-300 overflow-hidden print:bg-white print:border-none print:shadow-none print:m-0 print:max-w-none print:overflow-visible">
+          <div className="sticky top-0 z-10 bg-[#fdfcf8]/90 dark:bg-slate-950/90 backdrop-blur-md px-6 py-4 border-b border-slate-200/50 dark:border-slate-800 flex items-center justify-between no-print">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-primary/10">
+                <BookMarked className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h2 className="font-heading font-bold text-lg leading-none">{material.title}</h2>
+                {material.topic && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {material.topic.name} • {material.subject.name}
+                  </p>
+                )}
+              </div>
             </div>
-            <div>
-              <h2 className="font-heading font-bold text-lg leading-none">{material.title}</h2>
-              {material.topic && (
-                <p className="text-xs text-muted-foreground mt-1">
-                  {material.topic.name} • {material.subject.name}
-                </p>
-              )}
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={handlePrint} className="hidden sm:flex gap-2">
+                <Printer className="h-4 w-4" /> Print
+              </Button>
+              <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-muted">
+                <X className="h-5 w-5" />
+              </Button>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handlePrint} className="hidden sm:flex gap-2">
-              <Printer className="h-4 w-4" /> Print
-            </Button>
-            <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full hover:bg-muted">
-              <X className="h-5 w-5" />
-            </Button>
-          </div>
-        </div>
-        
-        <div className="px-8 py-8 print-content">
-          {/* Header for print only */}
-          <div className="hidden print-only mb-8 border-b-2 border-black pb-4">
-            <h1 className="text-3xl font-bold">{material.title}</h1>
-            <p className="text-sm mt-2">
-              Subject: {material.subject.name} | Topic: {material.topic?.name}
-            </p>
-            <p className="text-xs text-gray-500 mt-1 italic">Generated by VidyaSetu AI Assistant</p>
-          </div>
-
-          <div className="max-w-none">
-            {material.content ? (
-              <SimpleMarkdown content={material.content} />
-            ) : (
-              <p className="text-muted-foreground italic">No content available for this material.</p>
-            )}
           </div>
           
-          <div className="mt-12 pt-6 border-t border-dashed text-center hidden print-only">
-            <p className="text-xs text-gray-400">© VidyaSetu — Empowering Academic Excellence</p>
+          <div className="px-8 py-8 print-content">
+            {/* Header for print only */}
+            <div className="hidden print-only mb-8 border-b-2 border-black pb-4">
+              <h1 className="text-3xl font-bold">{material.title}</h1>
+              <p className="text-sm mt-2">
+                Subject: {material.subject.name} | Topic: {material.topic?.name}
+              </p>
+              <p className="text-xs text-gray-500 mt-1 italic">Generated by VidyaSetu AI Assistant</p>
+            </div>
+
+            <div className="max-w-none">
+              {material.content ? (
+                <NotesContent content={material.content} />
+              ) : (
+                <p className="text-muted-foreground italic">No content available for this material.</p>
+              )}
+            </div>
+            
+            <div className="mt-12 pt-6 border-t border-dashed text-center hidden print-only">
+              <p className="text-xs text-gray-400">© VidyaSetu — Empowering Academic Excellence</p>
+            </div>
           </div>
-        </div>
-      </Card>
-    </div>
+        </Card>
+      </div>
+    </>
   );
 }
 
@@ -485,23 +626,70 @@ function TopicDetailPanel({ topic, subjectId, onBack, onWatchVideo }: TopicDetai
               </span>
             </div>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => {
-              setLoading(true);
-              fetch(`/api/study-materials?topicId=${topic.id}&refresh=true`)
-                .then((r) => r.json())
-                .then((d) => setMaterials(d.materials ?? []))
-                .catch(console.error)
-                .finally(() => setLoading(false));
-            }}
-            disabled={loading}
-            className="shrink-0 gap-2 border-primary/20 hover:bg-primary/5 text-primary font-bold shadow-sm"
-          >
-            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
-            Upgrade
-          </Button>
+          
+          <div className="flex items-center gap-2 shrink-0">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={async () => {
+                setLoading(true);
+                try {
+                  const res = await fetch(`/api/study-materials/worksheet`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ topicId: topic.id }),
+                  });
+                  const data = await res.json();
+                  if (!res.ok) {
+                    toast.error(data.error || "Generation failed");
+                    return;
+                  }
+                  toast.success("Practice Sheet Generated!");
+                  setInlineNote({
+                    id: data.materialId,
+                    title: data.title,
+                    content: data.content,
+                    type: "WORKSHEET",
+                    description: "",
+                    youtubeUrl: null,
+                    thumbnailUrl: null,
+                    fileUrl: null,
+                    isAIGenerated: true,
+                    subject: { id: subjectId, name: "", color: "" },
+                    chapter: null,
+                    topic: { id: topic.id, name: topic.name }
+                  });
+                } catch {
+                  toast.error("Failed to generate practice sheet");
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading}
+              className="gap-2 border-emerald-500/20 hover:bg-emerald-500/5 text-emerald-600 font-bold shadow-sm"
+            >
+              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Dumbbell className="h-3.5 w-3.5" />}
+              Generate Practice
+            </Button>
+
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => {
+                setLoading(true);
+                fetch(`/api/study-materials?topicId=${topic.id}&refresh=true`)
+                  .then((r) => r.json())
+                  .then((d) => setMaterials(d.materials ?? []))
+                  .catch(console.error)
+                  .finally(() => setLoading(false));
+              }}
+              disabled={loading}
+              className="gap-2 border-primary/20 hover:bg-primary/5 text-primary font-bold shadow-sm"
+            >
+              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              Upgrade
+            </Button>
+          </div>
         </div>
 
         {/* Search + type filter */}

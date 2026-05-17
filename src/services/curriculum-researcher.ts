@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import { z } from "zod";
-import { geminiProModels, callGemini } from "@/lib/gemini";
+import { callGemini } from "@/lib/gemini";
 
 const curriculumSchema = z.object({
   chapters: z.array(
@@ -41,64 +41,50 @@ export class CurriculumResearcher {
       return subject.chapters;
     }
 
-    const prompt = `You are an expert curriculum designer with deep knowledge of the CBSE (Central Board of Secondary Education) syllabus and NCERT textbooks published by the National Council of Educational Research and Training, India.
-
-Your task is to generate the EXACT chapter and topic structure from the official NCERT textbook for:
-
+    const isSST = subject.name.toLowerCase().includes("social") || subject.name.toLowerCase().includes("history");
+    
+    const prompt = `You are an expert curriculum designer for CBSE/NCERT.
+Generate the NCERT chapter/topic structure for:
 Grade: ${subject.grade}
 Subject: ${subject.name}
 Board: ${subject.board || "CBSE"}
-Syllabus Year: 2024-2025
 
-CRITICAL CONSTRAINTS:
-1. Use ONLY chapters and topics from the official NCERT textbook for this subject and grade.
-2. Chapter names MUST match the NCERT textbook table of contents exactly.
-3. Do NOT add any chapter or topic that is not in the NCERT textbook.
-4. Do NOT include content from other boards (ICSE, State Boards) or higher grades.
-5. Include ALL chapters from the textbook — do not skip any.
+CONSTRAINTS:
+1. Exact NCERT chapter names.
+2. ${isSST ? "Max 3 topics per chapter (CRITICAL for SST payload size)" : "Max 5 topics per chapter"}.
+3. USE EXTREME BREVITY: Max 2 words per topic name. ${isSST ? "NO topic descriptions." : "Max 1 sentence per description."}
+4. Return ONLY a valid JSON object.
 
-NCERT Textbook Reference:
-- Mathematics Class 9: "Mathematics" (NCERT, 15 chapters)
-- Science Class 9: "Science" (NCERT, 15 chapters)
-- Social Science Class 9: "India and the Contemporary World - I" (History), "Contemporary India - I" (Geography), "Democratic Politics - I" (Civics), "Economics" (NCERT)
-- English Class 9: "Beehive" (Prose & Poetry), "Moments" (Supplementary Reader)
-- Hindi Class 9: "Kshitij" (Prose & Poetry), "Kritika" (Supplementary Reader)
-
-Return the result STRICTLY as a JSON object matching this schema:
 {
   "chapters": [
     {
-      "name": "Exact NCERT Chapter Title",
-      "description": "One-line description from NCERT syllabus",
+      "name": "Chapter Title",
+      "description": "Short summary",
       "topics": [
-        { "name": "Key Topic Title", "description": "Brief description" }
+        { "name": "Topic Name"${isSST ? "" : ', "description": "Short desc"'} }
       ]
     }
   ]
-}
-
-Ensure the output is pure JSON. Do not include markdown formatting or backticks.`;
+}`;
 
     const fallbackData = { chapters: [] };
     
     try {
       const validatedData = await callGemini(
-        geminiProModels,
+        "PRO",
         prompt,
         fallbackData,
         curriculumSchema
       );
 
-      if (validatedData.chapters.length === 0) {
+      if (!validatedData || validatedData.chapters.length === 0) {
         throw new Error("Gemini returned empty chapters array after all retries.");
       }
 
-      // Save to database atomically — if any chapter fails, none are persisted.
-      // This prevents partial seeding that would make the idempotency check
-      // skip this subject forever (it checks subject.chapters.length > 0).
-      await prisma.$transaction(
-        validatedData.chapters.map((chapterData, i) =>
-          prisma.chapter.create({
+      // Save to database atomically with a longer timeout (60s) to handle large curricula
+      await prisma.$transaction(async (tx) => {
+        for (const [i, chapterData] of validatedData.chapters.entries()) {
+          await tx.chapter.create({
             data: {
               subjectId: subject.id,
               name: chapterData.name,
@@ -111,9 +97,9 @@ Ensure the output is pure JSON. Do not include markdown formatting or backticks.
                 })),
               },
             },
-          })
-        )
-      );
+          });
+        }
+      }, { timeout: 60000 });
 
       console.log(`[CurriculumResearcher] Successfully generated curriculum for ${subject.name}`);
       

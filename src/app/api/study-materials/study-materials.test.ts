@@ -33,6 +33,11 @@ vi.mock("@/services/content-curator", () => ({
   isContentOutdated: vi.fn(),
 }));
 
+vi.mock("@/lib/require-subscription", () => ({
+  requireSubscription: vi.fn(() => Promise.resolve({ allowed: true, reason: "OK", code: "OK", shadowMode: false })),
+  incrementUsage: vi.fn(() => Promise.resolve()),
+}));
+
 describe("GET /api/study-materials", () => {
   beforeEach(() => {
     vi.clearAllMocks();

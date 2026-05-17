@@ -30,7 +30,7 @@ export async function GET(req: NextRequest) {
   try {
     const user = await prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      select: { grade: true, board: true },
+      select: { grade: true, board: true, school: true },
     });
 
     // Build subject filter (scoped to user's grade/board when no explicit subjectId)
@@ -45,10 +45,14 @@ export async function GET(req: NextRequest) {
     const eligibleSubjectIds = eligibleSubjects.map((s) => s.id);
 
     // Build where clause
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const where: Record<string, any> = {
+    const where: any = {
       isPublished: true,
       subjectId: { in: eligibleSubjectIds },
+      // 🏫 SCHOOL FILTERING
+      OR: [
+        { school: null },
+        { school: user.school }
+      ]
     };
 
     if (topicId) where.topicId = topicId;
@@ -62,7 +66,12 @@ export async function GET(req: NextRequest) {
         chapter: { select: { id: true, name: true } },
         topic: { select: { id: true, name: true } },
       },
-      orderBy: [{ type: "asc" }, { createdAt: "desc" }],
+      // Order by school (not null first), then type, then date
+      orderBy: [
+        { school: "desc" } as any, 
+        { type: "asc" }, 
+        { createdAt: "desc" }
+      ],
       take: 100,
     });
 
@@ -75,13 +84,30 @@ export async function GET(req: NextRequest) {
     }
 
     // JUST-IN-TIME (JIT) Content Generation
-    // If a specific topic was requested but has no materials or outdated materials, autonomously generate them.
+    // Synergy: If a student triggers this, we save it globally so other students get it for free.
     const isOutdated = isContentOutdated(materials);
     if (topicId && (isOutdated || forceRefresh) && !type && !query) {
-      console.log(`[API] Topic ${topicId} content is missing or outdated. Triggering AI Curator...`);
+      // 🛡️ CHECK QUOTA: Only apply quota if we are actually CALLING AI
+      const { requireSubscription, incrementUsage } = await import("@/lib/require-subscription");
+      const access = await requireSubscription(userId, "AI_STUDY_NOTES");
+      
+      if (!access.allowed && !access.shadowMode) {
+        return NextResponse.json({ 
+          error: access.reason, 
+          code: access.code,
+          materials: materials // Return existing materials if any
+        }, { status: 403 });
+      }
+
+      console.log(`[API] Topic ${topicId} content missing/outdated. Generating Global Asset...`);
       try {
         const pack = await generateTopicContentPack(topicId);
         await saveContentPack(topicId, pack);
+        
+        // 📊 INCREMENT USAGE: Successful generation
+        await incrementUsage(userId, "AI_STUDY_NOTES");
+        
+        console.log(`[API] Global Asset for ${topicId} is now broadcasted to all students.`);
         
         // Re-fetch materials after generation
         materials = await prisma.studyMaterial.findMany({
@@ -91,12 +117,15 @@ export async function GET(req: NextRequest) {
             chapter: { select: { id: true, name: true } },
             topic: { select: { id: true, name: true } },
           },
-          orderBy: [{ type: "asc" }, { createdAt: "desc" }],
+          orderBy: [
+            { school: "desc" } as any, 
+            { type: "asc" }, 
+            { createdAt: "desc" }
+          ],
           take: 100,
         });
       } catch (genError) {
-        console.error(`[API] Failed to JIT generate content for ${topicId}:`, genError);
-        // We catch and swallow here to return an empty array instead of crashing the UI
+        console.error(`[API] Failed to generate/broadcast content for ${topicId}:`, genError);
       }
     }
 
@@ -110,7 +139,7 @@ export async function GET(req: NextRequest) {
           )
         : materials;
 
-    const shaped = filtered.map((m) => ({
+    const shaped = filtered.map((m: any) => ({
       id: m.id,
       title: m.title,
       description: m.description,

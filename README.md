@@ -8,7 +8,8 @@ A comprehensive learning management system built with modern web technologies, d
 - **📖 Study Materials**: Curated notes, videos, PDFs, and practice materials
 - **📊 Progress Tracking**: Visual analytics with charts, streaks, and subject-wise insights
 - **🎯 Gamification**: Badges, points, and achievements to motivate learning
-- **🔐 Authentication**: Secure login with Google OAuth
+- **🔐 Authentication**: Secure login with Google OAuth with self-healing loop detection
+- **🤖 Socratic AI Tutor**: A "Study Buddy" that guides you through hints and questions instead of giving direct answers
 - **📱 Responsive Design**: Works seamlessly on desktop and mobile devices
 - **⚡ Modern Stack**: Built with Next.js 16, React 19, and TypeScript
 
@@ -56,7 +57,7 @@ vidyasetu/
 │   │   └── utils.ts      # Helper functions
 │   ├── services/         # Business logic services
 │   ├── types/            # TypeScript type definitions
-│   └── middleware.ts     # Next.js middleware
+│   └── proxy.ts          # Next.js Middleware (gateway)
 ├── vitest.config.ts      # Test configuration
 ├── vitest.setup.ts       # Test setup
 └── package.json          # Dependencies and scripts

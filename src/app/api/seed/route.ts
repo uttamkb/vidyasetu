@@ -88,7 +88,8 @@ function generateQuestions(subjectName: string, week: number): LegacyQuestion[] 
 export async function POST() {
   // Auth guard — only ADMIN users can trigger seeding
   const session = await auth();
-  if (!session?.user || (session.user as any).role !== "ADMIN") {
+  const role = (session?.user as any)?.role;
+  if (!session?.user || (role !== "ADMIN" && role !== "SUPER_ADMIN")) {
     return NextResponse.json({ error: "Unauthorized — ADMIN role required" }, { status: 403 });
   }
 

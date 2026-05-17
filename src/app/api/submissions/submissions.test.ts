@@ -41,6 +41,11 @@ vi.mock("@/lib/prisma-json", () => ({
   toJson: vi.fn((val) => val),
 }));
 
+vi.mock("@/lib/require-subscription", () => ({
+  requireSubscription: vi.fn(() => Promise.resolve({ allowed: true, reason: "OK", code: "OK", shadowMode: true })),
+  incrementUsage: vi.fn(() => Promise.resolve()),
+}));
+
 describe("Submissions API", () => {
   beforeEach(() => {
     vi.clearAllMocks();

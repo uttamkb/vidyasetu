@@ -3,6 +3,25 @@
 # ============================================================
 # VidyaSetu — Production-Grade CI/CD & Orchestration
 # Usage: ./build-and-run.sh [options]
+#
+# QUICK START CHEAT SHEET:
+# 1. Daily Development:   ./build-and-run.sh --dev
+#    (Runs tests, starts Next.js hot-reload and Inngest)
+# 
+# 2. Fast Dev:            ./build-and-run.sh --dev --skip-tests
+#    (Starts dev server immediately, skipping Vitest/Coverage)
+#
+# 3. Database Schema:     ./build-and-run.sh --dev --reset-db
+#    (Pushes schema.prisma changes & wipes stale Auth data)
+#
+# 3b. Push Schema Only:   ./build-and-run.sh --dev --push-db
+#    (Pushes schema.prisma changes without wiping data)
+#
+# 4. Pre-deploy Check:    ./build-and-run.sh --prod
+#    (Forces strict build, typecheck, lint, and standalone server)
+#
+# 5. CI Pipeline:         ./build-and-run.sh --ci
+#    (Automated pipeline mode: Tests, Coverage, Typecheck only)
 # ============================================================
 
 set -euo pipefail
@@ -26,6 +45,7 @@ INNGEST_LOG=".inngest.log"
 
 MODE="dev" # dev, prod, ci
 RESET_DB=false
+PUSH_DB=false
 SKIP_TESTS=false
 
 # ── Help ─────────────────────────────────────────────────────
@@ -37,7 +57,8 @@ show_help() {
   echo "  --dev         Run in development mode (hot-reload, filtered logs) [Default]"
   echo "  --prod        Run in production mode (Build + Standalone Server)"
   echo "  --ci          Run in CI mode (Build + Test + Coverage only, no server)"
-  echo "  --reset-db    Push schema changes to DB before starting"
+  echo "  --reset-db    Push schema changes to DB before starting (WIPES AUTH DATA)"
+  echo "  --push-db     Push schema changes to DB before starting (Keeps data intact)"
   echo "  --skip-tests  Skip Vitest and Coverage phases"
   echo "  --port <n>    Run on a custom port (default: 3000)"
   echo "  --help        Show this help"
@@ -52,6 +73,7 @@ while [[ $# -gt 0 ]]; do
     --prod)       MODE="prod"; shift ;;
     --ci)         MODE="ci"; shift ;;
     --reset-db)   RESET_DB=true; shift ;;
+    --push-db)    PUSH_DB=true; shift ;;
     --skip-tests) SKIP_TESTS=true; shift ;;
     --port)       PORT="$2"; shift 2 ;;
     --help)       show_help ;;
@@ -162,7 +184,7 @@ HOME=$(pwd)/.prisma_home PRISMA_CACHE_DIR=./.prisma-cache npx prisma generate --
 }
 echo -e "      ${GREEN}✓ Prisma client ready${RESET}"
 
-if [ "$RESET_DB" = true ]; then
+if [ "$RESET_DB" = true ] || [ "$PUSH_DB" = true ]; then
   echo -e "      ${DIM}Syncing database schema...${RESET}"
   HOME=$(pwd)/.prisma_home npx prisma db push --accept-data-loss > .prisma.log 2>&1 || {
     echo -e "      ${RED}✗ prisma db push failed. See .prisma.log for details:${RESET}"
@@ -170,6 +192,14 @@ if [ "$RESET_DB" = true ]; then
     exit 1
   }
   echo -e "      ${GREEN}✓ Database synced${RESET}"
+
+  if [ "$RESET_DB" = true ]; then
+    echo -e "      ${DIM}Clearing stale auth data (users, accounts, sessions)...${RESET}"
+    HOME=$(pwd)/.prisma_home npx prisma db execute --stdin <<'SQL' > /dev/null 2>&1
+TRUNCATE TABLE "accounts", "sessions", "users" CASCADE;
+SQL
+    echo -e "      ${GREEN}✓ Auth tables cleared${RESET}"
+  fi
 fi
 
 # ── Step 3: Tests & Coverage ────────────────────────────────
@@ -204,6 +234,9 @@ else
   
   # Ensure we wipe cache for CI/Prod builds to avoid stale TS errors
   rm -rf .next/cache
+  
+  # Inngest dev mode for build phase (module evaluation during pre-rendering)
+  export INNGEST_DEV=true
   
   npm run build > .build.log 2>&1 || {
     echo -e "      ${RED}✗ Build failed! Type-check or Lint error detected.${RESET}"

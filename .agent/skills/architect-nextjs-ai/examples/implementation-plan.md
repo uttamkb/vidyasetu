@@ -177,7 +177,12 @@ const AssignmentOutputSchema = z.object({
 | Gemini returns malformed JSON | Caught in try-catch, 503 returned | ✅ |
 | DB insert fails | 500 logged, user sees friendly message | ✅ |
 
-**TypeScript:** `npx tsc --noEmit` → ✅ Zero errors
+**Unit Testing (Vitest):**
+- [x] `src/services/assignment-engine.test.ts`: 100% logic coverage
+- [x] `src/lib/gemini.test.ts`: Cascade and retry logic verified
+- [x] `npm run test` passes for the entire project
+
+**Type Safety:** `npm run typecheck` → ✅ Zero errors
 
 **Manual E2E flow:**
 1. Log in with demo account → `/dashboard`
@@ -190,9 +195,9 @@ const AssignmentOutputSchema = z.object({
 
 ## Definition of Done ✅
 
-- [x] `npx tsc --noEmit` — zero errors
-- [x] API routes return typed responses on success AND error
-- [x] Prisma schema: indexes defined, FK `onDelete` set
-- [x] AI output Zod-validated before use
-- [x] No Prisma imports in `"use client"` components
-- [x] Happy path + error scenarios verified manually
+- [x] **Architectural Integrity**: Follows Three-File Pattern for Auth.
+- [x] **Strict Typing**: Zod schemas for all boundaries; zero `any` types.
+- [x] **Unit Tests**: New logic in `src/services/` has Vitest unit tests.
+- [x] **Self-Review**: Code reviewed against `architecture-standards.md`.
+- [x] **Validation**: `npm run validate` and `npm run test` pass.
+- [x] **No Regressions**: No existing functionality broken.
