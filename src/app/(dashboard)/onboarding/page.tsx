@@ -52,28 +52,11 @@ export default function OnboardingPage() {
     );
   };
 
-  const canProceed = () => true;
-
-  const handleSkip = async () => {
-    setSaving(true);
-    try {
-      const res = await fetch("/api/onboarding", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ grade: "9", board: "CBSE" }),
-      });
-      if (res.ok) {
-        // Update the JWT token so middleware sees isOnboarded=true
-        await updateSession({ isOnboarded: true });
-        window.location.href = "/dashboard";
-      } else {
-        setError("Could not save preferences. Please try again.");
-      }
-    } catch {
-      setError("Network error. Please try again.");
-    } finally {
-      setSaving(false);
+  const canProceed = () => {
+    if (step === 1) {
+      return !!grade && !!board && !!state;
     }
+    return true;
   };
 
   const handleComplete = async () => {
@@ -351,13 +334,6 @@ export default function OnboardingPage() {
               </Button>
             )}
           </div>
-          <button
-            onClick={handleSkip}
-            disabled={saving}
-            className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline transition-colors"
-          >
-            Skip for now — I&apos;ll set this up later
-          </button>
         </CardFooter>
       </Card>
     </div>

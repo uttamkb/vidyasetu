@@ -9,6 +9,7 @@ import {
   autoPromoteAIQuestionsJob,
   retryFailedEvaluationsJob,
   archiveOldAIValidationsJob,
+  bootstrapGradeCurriculum,
 } from "@/inngest/functions";
 import { evaluateSubmissionJob } from "@/inngest/evaluation";
 import { generateAssignmentJob } from "@/inngest/generation";
@@ -33,5 +34,6 @@ export const { GET, POST, PUT } = serve({
     autoPromoteAIQuestionsJob,
     retryFailedEvaluationsJob,
     archiveOldAIValidationsJob,
+    bootstrapGradeCurriculum,
   ],
 });

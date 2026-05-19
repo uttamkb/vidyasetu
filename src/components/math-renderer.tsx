@@ -13,6 +13,15 @@ interface MathRendererProps {
  * Supports inline math: \( ... \)
  * Supports block math: \[ ... \]
  */
+const formatText = (text: string) => {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\*\*(.*?)\*\*/g, '<strong class="font-extrabold text-slate-900 dark:text-slate-100">$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em class="italic text-primary font-medium">$1</em>');
+};
+
 export function MathRenderer({ content, className = "" }: MathRendererProps) {
   if (!content) return null;
 
@@ -42,10 +51,8 @@ export function MathRenderer({ content, className = "" }: MathRendererProps) {
             } else if (part.startsWith("\\(") && part.endsWith("\\)")) {
               math = part.slice(2, -2);
             } else if (isLegacySqrt) {
-              // Convert sqrt(5) to \sqrt{5}
               math = part.replace("sqrt(", "\\sqrt{").replace(/\)$/, "}");
             } else if (isLegacyExp) {
-              // Convert 2^(2/3) to 2^{2/3}
               math = part.replace("^", "^{").concat("}");
             }
 
@@ -65,7 +72,12 @@ export function MathRenderer({ content, className = "" }: MathRendererProps) {
           }
         }
 
-        return <span key={index}>{part}</span>;
+        return (
+          <span 
+            key={index} 
+            dangerouslySetInnerHTML={{ __html: formatText(part) }}
+          />
+        );
       })}
     </div>
   );

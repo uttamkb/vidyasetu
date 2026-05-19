@@ -12,10 +12,13 @@ vi.mock("@/lib/auth", () => ({
 vi.mock("@/lib/db", () => ({
   prisma: {
     user: {
-      findUniqueOrThrow: vi.fn(),
+      findUnique: vi.fn(),
     },
     subject: {
       findMany: vi.fn(),
+    },
+    school: {
+      findFirst: vi.fn(),
     },
     studyMaterial: {
       findMany: vi.fn(),
@@ -50,9 +53,9 @@ describe("GET /api/study-materials", () => {
     expect(res.status).toBe(401);
   });
 
-  it("triggers JIT generation if topic has no materials", async () => {
+  it("triggers JIT generation if topic has no materials and refresh=true is passed", async () => {
     (auth as any).mockResolvedValue({ user: { id: "user-1" } });
-    (prisma.user.findUniqueOrThrow as any).mockResolvedValue({ grade: "9", board: "CBSE" });
+    (prisma.user.findUnique as any).mockResolvedValue({ grade: "9", board: "CBSE" });
     (prisma.subject.findMany as any).mockResolvedValue([{ id: "sub-1" }]);
     
     // First call returns empty, second call (after JIT) returns generated material
@@ -64,7 +67,7 @@ describe("GET /api/study-materials", () => {
     (saveContentPack as any).mockResolvedValue({});
     (isContentOutdated as any).mockReturnValue(true);
 
-    const req = new NextRequest("http://localhost/api/study-materials?topicId=topic-1");
+    const req = new NextRequest("http://localhost/api/study-materials?topicId=topic-1&refresh=true");
     const res = await GET(req);
     const data = await res.json();
 
@@ -74,9 +77,26 @@ describe("GET /api/study-materials", () => {
     expect(data.materials[0].title).toBe("Smart Notes");
   });
 
+  it("does NOT trigger JIT generation on passive browse (without refresh=true)", async () => {
+    (auth as any).mockResolvedValue({ user: { id: "user-1" } });
+    (prisma.user.findUnique as any).mockResolvedValue({ grade: "9", board: "CBSE" });
+    (prisma.subject.findMany as any).mockResolvedValue([{ id: "sub-1" }]);
+    
+    (prisma.studyMaterial.findMany as any).mockResolvedValue([]);
+    (isContentOutdated as any).mockReturnValue(true);
+
+    const req = new NextRequest("http://localhost/api/study-materials?topicId=topic-1");
+    const res = await GET(req);
+    const data = await res.json();
+
+    expect(generateTopicContentPack).not.toHaveBeenCalled();
+    expect(saveContentPack).not.toHaveBeenCalled();
+    expect(data.materials.length).toBe(0);
+  });
+
   it("auto-heals broken AI notes", async () => {
     (auth as any).mockResolvedValue({ user: { id: "user-1" } });
-    (prisma.user.findUniqueOrThrow as any).mockResolvedValue({ grade: "9", board: "CBSE" });
+    (prisma.user.findUnique as any).mockResolvedValue({ grade: "9", board: "CBSE" });
     (prisma.subject.findMany as any).mockResolvedValue([{ id: "sub-1" }]);
     
     // Returns a broken note (too short)

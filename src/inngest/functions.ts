@@ -312,3 +312,64 @@ export const archiveOldAIValidationsJob = inngest.createFunction(
     return { deleted };
   }
 );
+
+// 9. On-Demand / Queue: Bootstrap Full Grade Curriculum
+// Triggered by admin to seed the 5 standard CBSE subjects for a grade and initiate AI scanning
+export const bootstrapGradeCurriculum = inngest.createFunction(
+  { id: "bootstrap-grade-curriculum", concurrency: 1 },
+  { event: "curriculum/bootstrap.grade" },
+  async ({ event, step }) => {
+    const { grade, board } = event.data;
+
+    if (!grade || !board) {
+      console.error("[Inngest] bootstrap-grade-curriculum: Missing grade or board in event data", event.data);
+      return { error: "Missing grade or board" };
+    }
+
+    const seededSubjects = await step.run("seed-subjects", async () => {
+      const cbseSubjects = [
+        { name: "Mathematics",    color: "bg-blue-500",   icon: "Calculator" },
+        { name: "Science",        color: "bg-green-500",  icon: "FlaskConical" },
+        { name: "Social Science", color: "bg-amber-500",  icon: "Globe" },
+        { name: "English",        color: "bg-purple-500", icon: "BookOpen" },
+        { name: "Hindi",          color: "bg-rose-500",   icon: "Pen" },
+      ];
+
+      const results = [];
+      for (const sub of cbseSubjects) {
+        const subject = await prisma.subject.upsert({
+          where: {
+            name_grade_board: {
+              name: sub.name,
+              grade,
+              board,
+            },
+          },
+          update: {},
+          create: {
+            name: sub.name,
+            color: sub.color,
+            icon: sub.icon,
+            grade,
+            board,
+          },
+          select: { id: true, name: true },
+        });
+        results.push(subject);
+      }
+      return results;
+    });
+
+    if (seededSubjects.length > 0) {
+      await step.sendEvent(
+        "dispatch-subject-seeders",
+        seededSubjects.map((subject) => ({
+          name: "app/curriculum.seed",
+          data: { subjectId: subject.id },
+        }))
+      );
+    }
+
+    return { grade, board, subjectsCount: seededSubjects.length };
+  }
+);

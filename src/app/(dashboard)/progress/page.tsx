@@ -11,10 +11,13 @@ import { Separator } from "@/components/ui/separator";
 // ─────────────────────────────────────────
 
 async function getProgressData(userId: string): Promise<ProgressData> {
-  const user = await prisma.user.findUniqueOrThrow({
+  const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { grade: true, board: true },
   });
+
+  const grade = user?.grade || "9";
+  const board = user?.board || "CBSE";
 
   const [submissions, subjects, totalAssignments] = await Promise.all([
     prisma.submission.findMany({
@@ -23,11 +26,11 @@ async function getProgressData(userId: string): Promise<ProgressData> {
       orderBy: { submittedAt: "asc" },
     }),
     prisma.subject.findMany({
-      where: { grade: user.grade, board: user.board },
+      where: { grade, board },
       include: { assignments: { select: { id: true } } },
     }),
     prisma.assignment.count({
-      where: { subject: { grade: user.grade, board: user.board } }
+      where: { subject: { grade, board } }
     }),
   ]);
 
@@ -111,13 +114,16 @@ async function getProgressData(userId: string): Promise<ProgressData> {
 }
 
 async function getMasteryMap(userId: string) {
-  const user = await prisma.user.findUniqueOrThrow({
+  const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { grade: true, board: true },
   });
 
+  const grade = user?.grade || "9";
+  const board = user?.board || "CBSE";
+
   const subjects = await prisma.subject.findMany({
-    where: { grade: user.grade, board: user.board },
+    where: { grade, board },
     include: {
       chapters: {
         include: {

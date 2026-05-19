@@ -4,13 +4,16 @@ import { redirect } from "next/navigation";
 import { CurriculumBrowser } from "./curriculum-browser";
 
 async function getSubjectsForUser(userId: string) {
-  const user = await prisma.user.findUniqueOrThrow({
+  const user = await prisma.user.findUnique({
     where: { id: userId },
     select: { grade: true, board: true },
   });
 
+  const grade = user?.grade || "9";
+  const board = user?.board || "CBSE";
+
   const subjects = await prisma.subject.findMany({
-    where: { grade: user.grade, board: user.board },
+    where: { grade, board },
     select: {
       id: true,
       name: true,

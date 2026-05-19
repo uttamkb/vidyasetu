@@ -6,6 +6,7 @@ import {
   cleanStaleGeneratingAssignments,
   retryFailedEvaluationsJob,
   archiveOldAIValidationsJob,
+  bootstrapGradeCurriculum,
 } from "./functions";
 import { prisma } from "@/lib/db";
 import { CurriculumResearcher } from "@/services/curriculum-researcher";
@@ -311,6 +312,50 @@ describe("Inngest Functions", () => {
         where: {
           createdAt: { lt: expect.any(Date) },
         },
+      });
+    });
+  });
+
+  describe("bootstrapGradeCurriculum", () => {
+    it("should abort if grade or board is missing", async () => {
+      const mockStep = createMockStep();
+      const handler = (bootstrapGradeCurriculum as any).fn || (bootstrapGradeCurriculum as any).invoke;
+
+      const result = await handler({ event: { data: {} }, step: mockStep });
+      expect(result.error).toBe("Missing grade or board");
+    });
+
+    it("should upsert 5 subjects and dispatch app/curriculum.seed events", async () => {
+      // Mock subject upserts
+      prisma.subject.upsert = vi.fn().mockImplementation(({ create }) => Promise.resolve({
+        id: `mock-${create.name.toLowerCase()}`,
+        name: create.name,
+      }));
+
+      const mockStep = createMockStep();
+      const handler = (bootstrapGradeCurriculum as any).fn || (bootstrapGradeCurriculum as any).invoke;
+
+      const result = await handler({
+        event: { data: { grade: "10", board: "CBSE" } },
+        step: mockStep,
+      });
+
+      expect(prisma.subject.upsert).toHaveBeenCalledTimes(5);
+      expect(mockStep.sendEvent).toHaveBeenCalledWith(
+        "dispatch-subject-seeders",
+        [
+          { name: "app/curriculum.seed", data: { subjectId: "mock-mathematics" } },
+          { name: "app/curriculum.seed", data: { subjectId: "mock-science" } },
+          { name: "app/curriculum.seed", data: { subjectId: "mock-social science" } },
+          { name: "app/curriculum.seed", data: { subjectId: "mock-english" } },
+          { name: "app/curriculum.seed", data: { subjectId: "mock-hindi" } },
+        ]
+      );
+
+      expect(result).toEqual({
+        grade: "10",
+        board: "CBSE",
+        subjectsCount: 5,
       });
     });
   });

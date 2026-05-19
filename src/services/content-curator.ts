@@ -206,6 +206,33 @@ Ensure all fields are fully populated with high-quality educational content. Kee
 
   const pack = await callGemini<ContentPack>("PRO", prompt, fallback);
 
+  // Robust validation & fallback healing
+  if (!pack.coreConcepts) pack.coreConcepts = [];
+  if (!pack.microTopics) pack.microTopics = [];
+  if (!pack.explanations) pack.explanations = [];
+  if (!pack.examples) pack.examples = [];
+  if (!pack.misconceptions) pack.misconceptions = [];
+  if (!pack.terminology) pack.terminology = [];
+  if (!pack.keyTakeaways) pack.keyTakeaways = [`Study notes for ${topic.name}`];
+  if (!pack.youtubeVideos) pack.youtubeVideos = [];
+  if (!pack.revisionSheet) {
+    pack.revisionSheet = { keyFormulas: [], keyTerms: [], mnemonics: [] };
+  } else {
+    if (!pack.revisionSheet.keyFormulas) pack.revisionSheet.keyFormulas = [];
+    if (!pack.revisionSheet.keyTerms) pack.revisionSheet.keyTerms = [];
+    if (!pack.revisionSheet.mnemonics) pack.revisionSheet.mnemonics = [];
+  }
+  if (!pack.selfAssessmentQuestions) pack.selfAssessmentQuestions = [];
+
+  console.log(`[content-curator] Validated content pack for topic ${topicId}:`, {
+    conceptsCount: pack.coreConcepts.length,
+    microCount: pack.microTopics.length,
+    explanationsCount: pack.explanations.length,
+    examplesCount: pack.examples.length,
+    questionsCount: pack.selfAssessmentQuestions.length,
+    takeawaysCount: pack.keyTakeaways.length,
+  });
+
   return pack;
 }
 
@@ -311,7 +338,7 @@ export async function saveContentPack(topicId: string, pack: ContentPack) {
         description: `Search results for ${topic.name} on YouTube. [Version: ${LATEST_CONTENT_VERSION}]`,
         type: "VIDEO",
         youtubeUrl: searchUrl,
-        thumbnailUrl: "https://img.youtube.com/vi/search/0.jpg", // Generic search icon placeholder
+        thumbnailUrl: null, // Search hub has no specific video ID — render Video icon placeholder
         subjectId: subject.id,
         chapterId: chapter.id,
         topicId,

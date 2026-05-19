@@ -28,9 +28,25 @@ export async function PATCH(req: Request) {
     const body = await req.json();
     const validatedData = onboardingSchema.parse(body);
 
-    const updatedUser = await prisma.user.update({
+    const updatedUser = await prisma.user.upsert({
       where: { id: session.user.id },
-      data: {
+      update: {
+        grade: validatedData.grade,
+        board: validatedData.board,
+        hardestSubjects: validatedData.hardestSubjects,
+        targetScore: validatedData.targetScore,
+        studyTimePreference: validatedData.studyTimePreference,
+        state: validatedData.state,
+        district: validatedData.district ?? null,
+        school: validatedData.school ?? null,
+        isOnboarded: true,
+      },
+      create: {
+        id: session.user.id,
+        email: session.user.email || `stale-session-${session.user.id}@vidyasetu.org`,
+        name: session.user.name || "Student",
+        image: session.user.image,
+        role: (session.user as any).role || "STUDENT",
         grade: validatedData.grade,
         board: validatedData.board,
         hardestSubjects: validatedData.hardestSubjects,

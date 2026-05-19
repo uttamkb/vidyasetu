@@ -28,10 +28,10 @@ export async function GET(req: NextRequest) {
   const forceRefresh = searchParams.get("refresh") === "true";
 
   try {
-    const user = await prisma.user.findUniqueOrThrow({
+    const user = (await prisma.user.findUnique({
       where: { id: userId },
       select: { grade: true, board: true, school: true },
-    });
+    })) ?? { grade: "9", board: "CBSE", school: null };
 
     // Build subject filter (scoped to user's grade/board when no explicit subjectId)
     const subjectFilter = subjectId
@@ -45,14 +45,25 @@ export async function GET(req: NextRequest) {
     const eligibleSubjectIds = eligibleSubjects.map((s) => s.id);
 
     // Build where clause
+    // StudyMaterial.school is a relation (via schoolId FK), User.school is a free-text string.
+    // Strategy: always show global materials (schoolId null). If the user has a school,
+    // resolve it to a School record and include that school's materials too.
+    let schoolIdFilter: any = { schoolId: null }; // default: global only
+
+    if (user.school) {
+      const schoolRecord = await prisma.school.findFirst({
+        where: { name: user.school },
+        select: { id: true },
+      });
+      if (schoolRecord) {
+        schoolIdFilter = { OR: [{ schoolId: null }, { schoolId: schoolRecord.id }] };
+      }
+    }
+
     const where: any = {
       isPublished: true,
       subjectId: { in: eligibleSubjectIds },
-      // 🏫 SCHOOL FILTERING
-      OR: [
-        { school: null },
-        { school: user.school }
-      ]
+      ...schoolIdFilter,
     };
 
     if (topicId) where.topicId = topicId;
@@ -66,9 +77,7 @@ export async function GET(req: NextRequest) {
         chapter: { select: { id: true, name: true } },
         topic: { select: { id: true, name: true } },
       },
-      // Order by school (not null first), then type, then date
       orderBy: [
-        { school: "desc" } as any, 
         { type: "asc" }, 
         { createdAt: "desc" }
       ],
@@ -85,8 +94,7 @@ export async function GET(req: NextRequest) {
 
     // JUST-IN-TIME (JIT) Content Generation
     // Synergy: If a student triggers this, we save it globally so other students get it for free.
-    const isOutdated = isContentOutdated(materials);
-    if (topicId && (isOutdated || forceRefresh) && !type && !query) {
+    if (topicId && forceRefresh && !type && !query) {
       // 🛡️ CHECK QUOTA: Only apply quota if we are actually CALLING AI
       const { requireSubscription, incrementUsage } = await import("@/lib/require-subscription");
       const access = await requireSubscription(userId, "AI_STUDY_NOTES");
@@ -118,7 +126,6 @@ export async function GET(req: NextRequest) {
             topic: { select: { id: true, name: true } },
           },
           orderBy: [
-            { school: "desc" } as any, 
             { type: "asc" }, 
             { createdAt: "desc" }
           ],
