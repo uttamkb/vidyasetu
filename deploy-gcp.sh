@@ -62,7 +62,7 @@ fi
 
 # 5. Grant Secret Access to the Service Account
 echo -e "${BLUE}Ensuring secrets exist and granting Secret Manager access...${NC}"
-SECRETS=("DATABASE_URL" "AUTH_SECRET" "GEMINI_API_KEY" "AUTH_GOOGLE_ID" "AUTH_GOOGLE_SECRET" "INNGEST_EVENT_KEY" "INNGEST_SIGNING_KEY")
+SECRETS=("DATABASE_URL" "AUTH_SECRET" "GEMINI_API_KEY" "AUTH_GOOGLE_ID" "AUTH_GOOGLE_SECRET" "INNGEST_EVENT_KEY" "INNGEST_SIGNING_KEY" "OWNER_EMAIL")
 for secret in "${SECRETS[@]}"; do
     # Create secret if it doesn't exist
     gcloud secrets describe $secret --project=$PROJECT_ID > /dev/null 2>&1
@@ -127,7 +127,7 @@ DEPLOY_OUTPUT=$(gcloud run deploy $SERVICE_NAME \
     --cpu=1 \
     --max-instances=10 \
     --set-env-vars="NEXTAUTH_URL=$CURRENT_URL,INNGEST_DEV=false" \
-    --set-secrets="DATABASE_URL=DATABASE_URL:latest,AUTH_SECRET=AUTH_SECRET:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,AUTH_GOOGLE_ID=AUTH_GOOGLE_ID:latest,AUTH_GOOGLE_SECRET=AUTH_GOOGLE_SECRET:latest,INNGEST_EVENT_KEY=INNGEST_EVENT_KEY:latest,INNGEST_SIGNING_KEY=INNGEST_SIGNING_KEY:latest" 2>&1)
+    --set-secrets="DATABASE_URL=DATABASE_URL:latest,AUTH_SECRET=AUTH_SECRET:latest,GEMINI_API_KEY=GEMINI_API_KEY:latest,AUTH_GOOGLE_ID=AUTH_GOOGLE_ID:latest,AUTH_GOOGLE_SECRET=AUTH_GOOGLE_SECRET:latest,INNGEST_EVENT_KEY=INNGEST_EVENT_KEY:latest,INNGEST_SIGNING_KEY=INNGEST_SIGNING_KEY:latest,OWNER_EMAIL=OWNER_EMAIL:latest" 2>&1)
 
 # Extract the actual URL from the output (it might have changed)
 ACTUAL_URL=$(echo "$DEPLOY_OUTPUT" | grep -o 'https://[^ ]*\.run\.app' | head -n 1)
